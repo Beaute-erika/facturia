@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Mail, Lock, Eye, EyeOff, ArrowRight, Loader2 } from "lucide-react";
-import type { Metadata } from "next";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
