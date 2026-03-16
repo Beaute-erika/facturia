@@ -1,0 +1,396 @@
+"use client";
+
+import { useState } from "react";
+import {
+  Plus,
+  Euro,
+  Clock,
+  CheckCircle,
+  XCircle,
+  Eye,
+  Download,
+  Receipt,
+  Sparkles,
+  Search,
+  MoreHorizontal,
+  FileCheck,
+  Trash2,
+  Send,
+} from "lucide-react";
+import { clsx } from "clsx";
+import Card from "@/components/ui/Card";
+import Button from "@/components/ui/Button";
+import Badge from "@/components/ui/Badge";
+import AIGenerateModal, { type GeneratedDevis } from "./AIGenerateModal";
+import ConvertToFactureModal from "./ConvertToFactureModal";
+import { generateDevisPDF, buildDevisDataFromRow } from "@/lib/pdf";
+
+type DevisStatus = "accepté" | "envoyé" | "en attente" | "brouillon" | "refusé";
+
+interface Devis {
+  id: string;
+  client: string;
+  objet: string;
+  montant: string;
+  date: string;
+  validite: string;
+  status: DevisStatus;
+}
+
+const initialDevis: Devis[] = [
+  { id: "DV-2024-156", client: "Sophie Girard", objet: "Installation chaudière gaz", montant: "5 800 €", date: "12 Mar. 2026", validite: "12 Avr. 2026", status: "envoyé" },
+  { id: "DV-2024-155", client: "Famille Martin", objet: "Réfection salle de bain complète", montant: "8 200 €", date: "10 Mar. 2026", validite: "10 Avr. 2026", status: "en attente" },
+  { id: "DV-2024-154", client: "Pierre Moreau", objet: "Dépannage urgent + réparation fuite", montant: "450 €", date: "08 Mar. 2026", validite: "08 Avr. 2026", status: "accepté" },
+  { id: "DV-2024-153", client: "SCI Verdure", objet: "Mise aux normes réseau eau chaude", montant: "14 500 €", date: "05 Mar. 2026", validite: "05 Avr. 2026", status: "brouillon" },
+  { id: "DV-2024-152", client: "Mairie de Vanves", objet: "Révision chauffage bâtiment A", montant: "22 800 €", date: "01 Mar. 2026", validite: "01 Avr. 2026", status: "refusé" },
+];
+
+const STATUS_CONFIG: Record<DevisStatus, { variant: "success" | "warning" | "error" | "info" | "default"; label: string }> = {
+  accepté: { variant: "success", label: "Accepté" },
+  envoyé: { variant: "info", label: "Envoyé" },
+  "en attente": { variant: "warning", label: "En attente" },
+  brouillon: { variant: "default", label: "Brouillon" },
+  refusé: { variant: "error", label: "Refusé" },
+};
+
+type Filter = "Tous" | "Brouillons" | "Envoyés" | "Acceptés" | "Refusés";
+const FILTERS: Filter[] = ["Tous", "Brouillons", "Envoyés", "Acceptés", "Refusés"];
+const FILTER_MAP: Record<Filter, DevisStatus | null> = {
+  Tous: null,
+  Brouillons: "brouillon",
+  Envoyés: "envoyé",
+  Acceptés: "accepté",
+  Refusés: "refusé",
+};
+
+export default function DevisClient() {
+  const [devis, setDevis] = useState<Devis[]>(initialDevis);
+  const [filter, setFilter] = useState<Filter>("Tous");
+  const [search, setSearch] = useState("");
+  const [aiOpen, setAiOpen] = useState(false);
+  const [convertTarget, setConvertTarget] = useState<Devis | null>(null);
+  const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "info" } | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const showToast = (msg: string, type: "success" | "info" = "success") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  // Add AI-generated devis
+  const handleGenerated = (generated: GeneratedDevis) => {
+    const newDevis: Devis = {
+      id: generated.id,
+      client: generated.client,
+      objet: generated.objet,
+      montant: generated.montant,
+      date: generated.date,
+      validite: generated.validite,
+      status: "brouillon",
+    };
+    setDevis([newDevis, ...devis]);
+    setAiOpen(false);
+    showToast(`Devis ${generated.id} créé par l'IA`);
+  };
+
+  // Convert devis → facture
+  const handleConvert = (factureId: string) => {
+    if (!convertTarget) return;
+    setDevis(devis.map((d) =>
+      d.id === convertTarget.id ? { ...d, status: "accepté" } : d
+    ));
+    setConvertTarget(null);
+    showToast(`Facture ${factureId} créée avec succès`);
+  };
+
+  // Download PDF
+  const handleDownload = (d: Devis) => {
+    setDownloadingId(d.id);
+    setTimeout(() => {
+      generateDevisPDF(buildDevisDataFromRow(d));
+      setDownloadingId(null);
+      showToast(`PDF ${d.id} téléchargé`, "info");
+    }, 300);
+  };
+
+  // Delete devis
+  const handleDelete = (id: string) => {
+    setDevis(devis.filter((d) => d.id !== id));
+    setMenuOpen(null);
+    showToast("Devis supprimé", "info");
+  };
+
+  // Filtered list
+  const filtered = devis.filter((d) => {
+    const statusMatch = FILTER_MAP[filter] === null || d.status === FILTER_MAP[filter];
+    const searchMatch =
+      !search ||
+      d.client.toLowerCase().includes(search.toLowerCase()) ||
+      d.objet.toLowerCase().includes(search.toLowerCase()) ||
+      d.id.toLowerCase().includes(search.toLowerCase());
+    return statusMatch && searchMatch;
+  });
+
+  const totalEnCours = devis
+    .filter((d) => d.status !== "refusé")
+    .reduce((s, d) => s + (parseFloat(d.montant.replace(/[^0-9]/g, "")) || 0), 0);
+
+  return (
+    <>
+      {/* Toast */}
+      {toast && (
+        <div className={clsx(
+          "fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-card border animate-fade-in",
+          toast.type === "success"
+            ? "bg-primary/10 border-primary/30 text-primary"
+            : "bg-status-info/10 border-status-info/30 text-status-info"
+        )}>
+          <CheckCircle className="w-4 h-4 flex-shrink-0" />
+          <span className="text-sm font-medium">{toast.msg}</span>
+        </div>
+      )}
+
+      {/* Modals */}
+      {aiOpen && (
+        <AIGenerateModal onClose={() => setAiOpen(false)} onGenerated={handleGenerated} />
+      )}
+      {convertTarget && (
+        <ConvertToFactureModal
+          devis={convertTarget}
+          onClose={() => setConvertTarget(null)}
+          onConfirm={handleConvert}
+        />
+      )}
+
+      <div className="space-y-6 animate-fade-in">
+        {/* Header */}
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-text-primary">Devis</h1>
+            <p className="text-text-muted mt-1">
+              {devis.length} devis •{" "}
+              <span className="text-primary font-medium">{totalEnCours.toLocaleString("fr-FR")} € en cours</span>
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              icon={Sparkles}
+              onClick={() => setAiOpen(true)}
+              className="border-primary/30 text-primary hover:bg-primary/10"
+            >
+              Générer avec IA
+            </Button>
+            <Button variant="primary" icon={Plus}>
+              Nouveau devis
+            </Button>
+          </div>
+        </div>
+
+        {/* KPIs */}
+        <div className="grid grid-cols-4 gap-4">
+          {[
+            {
+              label: "En attente",
+              value: String(devis.filter((d) => d.status === "en attente" || d.status === "envoyé").length),
+              icon: Clock,
+              color: "text-status-warning",
+              bg: "bg-status-warning/10",
+            },
+            {
+              label: "Acceptés (mois)",
+              value: String(devis.filter((d) => d.status === "accepté").length),
+              icon: CheckCircle,
+              color: "text-primary",
+              bg: "bg-primary/10",
+            },
+            {
+              label: "Refusés (mois)",
+              value: String(devis.filter((d) => d.status === "refusé").length),
+              icon: XCircle,
+              color: "text-status-error",
+              bg: "bg-status-error/10",
+            },
+            {
+              label: "Taux de conversion",
+              value: `${Math.round((devis.filter((d) => d.status === "accepté").length / Math.max(devis.length, 1)) * 100)}%`,
+              icon: Euro,
+              color: "text-status-info",
+              bg: "bg-status-info/10",
+            },
+          ].map((s, i) => (
+            <Card key={i} className="py-4">
+              <div className={clsx("w-9 h-9 rounded-xl flex items-center justify-center mb-3", s.bg)}>
+                <s.icon className={clsx("w-5 h-5", s.color)} />
+              </div>
+              <p className={clsx("text-2xl font-bold font-mono", s.color)}>{s.value}</p>
+              <p className="text-text-muted text-sm mt-1">{s.label}</p>
+            </Card>
+          ))}
+        </div>
+
+        {/* Table card */}
+        <Card className="p-0 overflow-hidden">
+          {/* Toolbar */}
+          <div className="px-5 py-4 border-b border-surface-border flex items-center gap-3">
+            <div className="relative flex-1 max-w-xs">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Rechercher…"
+                className="input-field w-full pl-8 py-1.5 text-sm"
+              />
+            </div>
+            <div className="flex gap-1 ml-auto">
+              {FILTERS.map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={clsx(
+                    "px-3 py-1 rounded-lg text-xs font-medium transition-colors",
+                    filter === f
+                      ? "bg-primary/10 text-primary"
+                      : "text-text-muted hover:text-text-primary hover:bg-surface-hover"
+                  )}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Table */}
+          {filtered.length === 0 ? (
+            <div className="py-16 text-center text-text-muted">
+              <FileCheck className="w-10 h-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">Aucun devis trouvé</p>
+            </div>
+          ) : (
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-surface-border bg-background-secondary/30">
+                  {["N° Devis", "Client", "Objet", "Montant HT", "Date", "Validité", "Statut", "Actions"].map((h) => (
+                    <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-text-muted uppercase tracking-wider">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((d) => {
+                  const sc = STATUS_CONFIG[d.status];
+                  const canConvert = d.status === "accepté" || d.status === "envoyé";
+                  return (
+                    <tr
+                      key={d.id}
+                      className="border-b border-surface-border last:border-0 hover:bg-surface-hover/50 transition-colors group"
+                    >
+                      <td className="px-5 py-4 font-mono text-sm text-primary font-semibold">{d.id}</td>
+                      <td className="px-5 py-4 text-sm font-medium text-text-primary">{d.client}</td>
+                      <td className="px-5 py-4 text-sm text-text-secondary max-w-[200px] truncate">{d.objet}</td>
+                      <td className="px-5 py-4 text-sm font-semibold font-mono text-text-primary">{d.montant}</td>
+                      <td className="px-5 py-4 text-sm text-text-muted">{d.date}</td>
+                      <td className="px-5 py-4 text-sm text-text-muted">{d.validite}</td>
+                      <td className="px-5 py-4">
+                        <Badge variant={sc.variant} size="sm" dot>{sc.label}</Badge>
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-1">
+                          {/* Convert to invoice — primary action */}
+                          {canConvert && (
+                            <button
+                              onClick={() => setConvertTarget(d)}
+                              title="Convertir en facture"
+                              className="flex items-center gap-1 px-2 py-1 rounded-lg text-primary bg-primary/10 hover:bg-primary/20 transition-colors text-xs font-semibold"
+                            >
+                              <Receipt className="w-3.5 h-3.5" />
+                              <span className="hidden group-hover:inline">Facturer</span>
+                            </button>
+                          )}
+
+                          {/* Download PDF */}
+                          <button
+                            onClick={() => handleDownload(d)}
+                            title="Télécharger PDF"
+                            disabled={downloadingId === d.id}
+                            className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-active transition-colors"
+                          >
+                            {downloadingId === d.id ? (
+                              <div className="w-4 h-4 border-2 border-text-muted border-t-transparent rounded-full animate-spin" />
+                            ) : (
+                              <Download className="w-4 h-4" />
+                            )}
+                          </button>
+
+                          {/* Send */}
+                          {d.status === "brouillon" && (
+                            <button
+                              onClick={() => {
+                                setDevis(devis.map((x) => x.id === d.id ? { ...x, status: "envoyé" as DevisStatus } : x));
+                                showToast(`Devis ${d.id} envoyé au client`);
+                              }}
+                              title="Envoyer au client"
+                              className="p-1.5 rounded-lg text-text-muted hover:text-status-info hover:bg-status-info/10 transition-colors"
+                            >
+                              <Send className="w-4 h-4" />
+                            </button>
+                          )}
+
+                          {/* View */}
+                          <button
+                            title="Aperçu"
+                            className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-active transition-colors"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+
+                          {/* More menu */}
+                          <div className="relative">
+                            <button
+                              onClick={() => setMenuOpen(menuOpen === d.id ? null : d.id)}
+                              className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-active transition-colors"
+                            >
+                              <MoreHorizontal className="w-4 h-4" />
+                            </button>
+                            {menuOpen === d.id && (
+                              <div className="absolute right-0 top-8 z-10 w-36 bg-surface border border-surface-border rounded-xl shadow-card py-1 animate-fade-in">
+                                <button
+                                  onClick={() => handleDelete(d.id)}
+                                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-status-error hover:bg-status-error/10 transition-colors"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  Supprimer
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+
+          {/* Footer */}
+          <div className="px-5 py-3 border-t border-surface-border flex items-center justify-between">
+            <p className="text-xs text-text-muted">{filtered.length} devis affichés</p>
+            <div className="flex items-center gap-2 text-xs text-text-muted">
+              <Sparkles className="w-3.5 h-3.5 text-primary" />
+              <span>
+                Utilisez{" "}
+                <button onClick={() => setAiOpen(true)} className="text-primary font-semibold hover:underline">
+                  Générer avec IA
+                </button>{" "}
+                pour créer un devis complet en 30 secondes
+              </span>
+            </div>
+          </div>
+        </Card>
+      </div>
+    </>
+  );
+}

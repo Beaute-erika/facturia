@@ -1,27 +1,95 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --primary: #00c97a;
+  --primary-dim: rgba(0, 201, 122, 0.1);
+  --bg: #040608;
+  --bg-secondary: #0a0d12;
+  --surface: #111720;
+  --surface-border: #1e2d3d;
+  --text-primary: #f0f4f8;
+  --text-secondary: #8899aa;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: #040608;
+  color: #f0f4f8;
+  font-family: 'Outfit', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0a0d12;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e2d3d;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #00c97a40;
+}
+
+/* Selection */
+::selection {
+  background: rgba(0, 201, 122, 0.25);
+  color: #f0f4f8;
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-surface border border-surface-border rounded-2xl;
+    backdrop-filter: blur(10px);
+  }
+
+  .btn-primary {
+    @apply bg-primary text-background font-semibold px-4 py-2 rounded-xl transition-all duration-200;
+    @apply hover:bg-primary-400 hover:shadow-glow active:scale-95;
+  }
+
+  .btn-ghost {
+    @apply text-text-secondary hover:text-text-primary hover:bg-surface-hover;
+    @apply px-4 py-2 rounded-xl transition-all duration-200;
+  }
+
+  .input-field {
+    @apply bg-background-secondary border border-surface-border rounded-xl px-4 py-2.5;
+    @apply text-text-primary placeholder:text-text-muted;
+    @apply focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20;
+    @apply transition-all duration-200;
+  }
+
+  .sidebar-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-text-secondary;
+    @apply hover:text-text-primary hover:bg-surface-hover transition-all duration-200;
+    @apply cursor-pointer select-none;
+  }
+
+  .sidebar-item.active {
+    @apply text-primary bg-primary/10 hover:bg-primary/15;
+  }
+
+  .stat-up {
+    @apply text-status-success;
+  }
+
+  .stat-down {
+    @apply text-status-error;
   }
 }
