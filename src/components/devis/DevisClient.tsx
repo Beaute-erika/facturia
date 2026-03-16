@@ -23,6 +23,7 @@ import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
 import AIGenerateModal, { type GeneratedDevis } from "./AIGenerateModal";
 import ConvertToFactureModal from "./ConvertToFactureModal";
+import NewDevisModal, { type NewDevisResult } from "./NewDevisModal";
 import { generateDevisPDF, buildDevisDataFromRow } from "@/lib/pdf";
 
 type DevisStatus = "accepté" | "envoyé" | "en attente" | "brouillon" | "refusé";
@@ -68,6 +69,7 @@ export default function DevisClient() {
   const [filter, setFilter] = useState<Filter>("Tous");
   const [search, setSearch] = useState("");
   const [aiOpen, setAiOpen] = useState(false);
+  const [newDevisOpen, setNewDevisOpen] = useState(false);
   const [convertTarget, setConvertTarget] = useState<Devis | null>(null);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "info" } | null>(null);
@@ -76,6 +78,13 @@ export default function DevisClient() {
   const showToast = (msg: string, type: "success" | "info" = "success") => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
+  };
+
+  // Add manually-created devis
+  const handleNewDevis = (result: NewDevisResult) => {
+    setDevis([result, ...devis]);
+    setNewDevisOpen(false);
+    showToast(`Devis ${result.id} créé`);
   };
 
   // Add AI-generated devis
@@ -152,6 +161,9 @@ export default function DevisClient() {
       )}
 
       {/* Modals */}
+      {newDevisOpen && (
+        <NewDevisModal onClose={() => setNewDevisOpen(false)} onCreated={handleNewDevis} />
+      )}
       {aiOpen && (
         <AIGenerateModal onClose={() => setAiOpen(false)} onGenerated={handleGenerated} />
       )}
@@ -182,7 +194,7 @@ export default function DevisClient() {
             >
               Générer avec IA
             </Button>
-            <Button variant="primary" icon={Plus}>
+            <Button variant="primary" icon={Plus} onClick={() => setNewDevisOpen(true)}>
               Nouveau devis
             </Button>
           </div>
