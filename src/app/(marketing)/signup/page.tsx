@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { Mail, Lock, Eye, EyeOff, User, ArrowRight, Loader2, CheckCircle2 } from "lucide-react";
 
 const METIERS = ["Plombier", "Électricien", "Maçon", "Carreleur", "Peintre", "Menuisier", "Couvreur", "Chauffagiste", "Autre"];
 
-export default function SignupPage() {
+function SignupForm() {
   const params = useSearchParams();
   const plan = params.get("plan") ?? "starter";
 
@@ -143,5 +143,13 @@ export default function SignupPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen" />}>
+      <SignupForm />
+    </Suspense>
   );
 }
