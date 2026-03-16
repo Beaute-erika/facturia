@@ -37,9 +37,9 @@ interface Props {
   onCreated: (devis: NewDevisResult) => void;
 }
 
-// ─── Mock clients (remplacés par Supabase quand connecté) ────────────────────
+// ─── Default clients (seed list — remplacé par Supabase quand connecté) ──────
 
-const MOCK_CLIENTS: ClientOption[] = [
+const DEFAULT_CLIENTS: ClientOption[] = [
   { id: "c1", label: "Sophie Girard", email: "sophie@example.fr", type: "particulier" },
   { id: "c2", label: "Famille Martin", email: "martin@example.fr", type: "particulier" },
   { id: "c3", label: "Pierre Moreau", email: "pierre@example.fr", type: "particulier" },
@@ -72,7 +72,8 @@ const in30DaysISO = () => {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function NewDevisModal({ onClose, onCreated }: Props) {
-  // Client
+  // Client list (mutable so newly created clients appear immediately)
+  const [clients, setClients] = useState<ClientOption[]>(DEFAULT_CLIENTS);
   const [clientSearch, setClientSearch] = useState("");
   const [selectedClient, setSelectedClient] = useState<ClientOption | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -98,11 +99,29 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
 
   const filteredClients = useMemo(
     () =>
-      MOCK_CLIENTS.filter((c) =>
+      clients.filter((c) =>
         c.label.toLowerCase().includes(clientSearch.toLowerCase())
       ),
-    [clientSearch]
+    [clients, clientSearch]
   );
+
+  // Confirm inline new client → add to list + auto-select
+  const confirmNewClient = () => {
+    const nom = newClientNom.trim();
+    if (!nom) return;
+    const created: ClientOption = {
+      id: `new-${Date.now()}`,
+      label: nom,
+      email: newClientEmail.trim() || undefined,
+      type: newClientType,
+    };
+    setClients((prev) => [created, ...prev]);
+    setSelectedClient(created);
+    setShowNewClient(false);
+    setNewClientNom("");
+    setNewClientEmail("");
+    setErrors((e) => ({ ...e, client: "" }));
+  };
 
   // ── Totals ────────────────────────────────────────────────────────────────
 
@@ -128,7 +147,7 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
 
   const validate = () => {
     const e: Record<string, string> = {};
-    const clientName = showNewClient ? newClientNom.trim() : selectedClient?.label;
+    const clientName = selectedClient?.label;
     if (!clientName) e.client = "Sélectionnez ou créez un client";
     if (!objet.trim()) e.objet = "L'objet est requis";
     if (lignes.some((l) => !l.description.trim())) e.lignes = "Toutes les lignes doivent avoir une description";
@@ -143,9 +162,7 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
 
     setSaving(true);
 
-    const clientLabel = showNewClient
-      ? newClientNom.trim()
-      : selectedClient!.label;
+    const clientLabel = selectedClient!.label;
 
     const numero = `DV-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`;
     const dateFormatted = new Date(dateEmission).toLocaleDateString("fr-FR", {
@@ -162,7 +179,7 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           client_nom: clientLabel,
-          client_email: showNewClient ? newClientEmail : selectedClient?.email,
+          client_email: selectedClient?.email,
           objet: objet.trim(),
           date_emission: dateEmission,
           date_validite: dateValidite,
@@ -343,6 +360,16 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
                   </div>
                 </div>
                 {errors.client && <p className="text-xs text-status-error">{errors.client}</p>}
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={confirmNewClient}
+                    disabled={!newClientNom.trim()}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-background text-xs font-semibold hover:bg-primary-400 transition-colors disabled:opacity-40"
+                  >
+                    <Check className="w-3.5 h-3.5" /> Ajouter ce client
+                  </button>
+                </div>
               </div>
             )}
           </section>

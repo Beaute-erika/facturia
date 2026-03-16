@@ -21,7 +21,7 @@ import { clsx } from "clsx";
 const navItems = [
   {
     label: "Dashboard",
-    href: "/",
+    href: "/app",
     icon: LayoutDashboard,
   },
   {
