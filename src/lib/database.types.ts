@@ -13,7 +13,7 @@ export type AutoStatut = "relance_devis" | "relance_facture" | "rapport_hebdo" |
 
 // ─── Row Types ───────────────────────────────────────────────────────────────
 
-export interface UserRow {
+export type UserRow = {
   id: string;
   email: string;
   prenom: string;
@@ -44,7 +44,7 @@ export interface UserRow {
   updated_at: string;
 }
 
-export interface ClientRow {
+export type ClientRow = {
   id: string;
   user_id: string;
   type: ClientType;
@@ -64,7 +64,7 @@ export interface ClientRow {
   updated_at: string;
 }
 
-export interface LigneDevis {
+export type LigneDevis = {
   id: string;
   description: string;
   quantite: number;
@@ -74,7 +74,7 @@ export interface LigneDevis {
   total_ht: number;
 }
 
-export interface DevisRow {
+export type DevisRow = {
   id: string;
   user_id: string;
   client_id: string;
@@ -95,7 +95,7 @@ export interface DevisRow {
   updated_at: string;
 }
 
-export interface FactureRow {
+export type FactureRow = {
   id: string;
   user_id: string;
   client_id: string;
@@ -119,7 +119,7 @@ export interface FactureRow {
   updated_at: string;
 }
 
-export interface ChantierEtape {
+export type ChantierEtape = {
   id: string;
   titre: string;
   description: string | null;
@@ -128,13 +128,13 @@ export interface ChantierEtape {
   date_prevue: string | null;
 }
 
-export interface ChantierNote {
+export type ChantierNote = {
   id: string;
   contenu: string;
   created_at: string;
 }
 
-export interface ChantierRow {
+export type ChantierRow = {
   id: string;
   user_id: string;
   client_id: string;
@@ -154,7 +154,7 @@ export interface ChantierRow {
   updated_at: string;
 }
 
-export interface AvisGoogleRow {
+export type AvisGoogleRow = {
   id: string;
   user_id: string;
   auteur: string;
@@ -168,7 +168,7 @@ export interface AvisGoogleRow {
   updated_at: string;
 }
 
-export interface AutomatisationConfig {
+export type AutomatisationConfig = {
   delai_jours?: number;
   canal: "email" | "sms" | "both";
   template?: string;
@@ -176,7 +176,7 @@ export interface AutomatisationConfig {
   jour_semaine?: number;
 }
 
-export interface AutomatisationRow {
+export type AutomatisationRow = {
   id: string;
   user_id: string;
   type: AutoStatut;
@@ -187,46 +187,253 @@ export interface AutomatisationRow {
   updated_at: string;
 }
 
-// ─── Database schema (Supabase generated style) ──────────────────────────────
+// ─── Database — format exact @supabase/supabase-js v2 (PostgrestVersion 12) ──
 
-export interface Database {
+export type Database = {
   public: {
     Tables: {
       users: {
         Row: UserRow;
-        Insert: Omit<UserRow, "created_at" | "updated_at">;
+        Insert: {
+          id: string;
+          email: string;
+          prenom: string;
+          nom: string;
+          metier: string;
+          raison_sociale?: string | null;
+          forme_juridique?: string;
+          siret?: string | null;
+          tva_num?: string | null;
+          adresse?: string | null;
+          code_postal?: string | null;
+          ville?: string | null;
+          tel?: string | null;
+          site?: string | null;
+          logo_url?: string | null;
+          signature_email?: string | null;
+          mentions_legales?: string | null;
+          devis_prefix?: string;
+          devis_next?: number;
+          facture_prefix?: string;
+          facture_next?: number;
+          tva_default?: string;
+          delai_paiement?: string;
+          iban?: string | null;
+          bic?: string | null;
+          plan?: "starter" | "pro" | "business";
+          created_at?: string;
+          updated_at?: string;
+        };
         Update: Partial<Omit<UserRow, "id" | "created_at">>;
+        Relationships: [];
       };
       clients: {
         Row: ClientRow;
-        Insert: Omit<ClientRow, "id" | "created_at" | "updated_at">;
+        Insert: {
+          id?: string;
+          user_id: string;
+          type: ClientType;
+          statut?: ClientStatut;
+          nom: string;
+          prenom?: string | null;
+          raison_sociale?: string | null;
+          email?: string | null;
+          tel?: string | null;
+          adresse?: string | null;
+          code_postal?: string | null;
+          ville?: string | null;
+          siret?: string | null;
+          notes?: string | null;
+          ca_total?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
         Update: Partial<Omit<ClientRow, "id" | "created_at">>;
+        Relationships: [
+          {
+            foreignKeyName: "clients_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
       };
       devis: {
         Row: DevisRow;
-        Insert: Omit<DevisRow, "id" | "created_at" | "updated_at">;
+        Insert: {
+          id?: string;
+          user_id: string;
+          client_id: string;
+          numero: string;
+          statut?: DevisStatut;
+          objet: string;
+          date_emission: string;
+          date_validite: string;
+          lignes?: LigneDevis[];
+          tva_rate?: number;
+          montant_ht?: number;
+          montant_tva?: number;
+          montant_ttc?: number;
+          notes?: string | null;
+          chorus_pro?: boolean;
+          pdf_url?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
         Update: Partial<Omit<DevisRow, "id" | "created_at">>;
+        Relationships: [
+          {
+            foreignKeyName: "devis_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "devis_client_id_fkey";
+            columns: ["client_id"];
+            isOneToOne: false;
+            referencedRelation: "clients";
+            referencedColumns: ["id"];
+          }
+        ];
       };
       factures: {
         Row: FactureRow;
-        Insert: Omit<FactureRow, "id" | "created_at" | "updated_at">;
+        Insert: {
+          id?: string;
+          user_id: string;
+          client_id: string;
+          devis_id?: string | null;
+          numero: string;
+          statut?: FactureStatut;
+          objet: string;
+          date_emission: string;
+          date_echeance: string;
+          date_paiement?: string | null;
+          lignes?: LigneDevis[];
+          tva_rate?: number;
+          montant_ht?: number;
+          montant_tva?: number;
+          montant_ttc?: number;
+          notes?: string | null;
+          chorus_pro?: boolean;
+          num_engagement_chorus?: string | null;
+          pdf_url?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
         Update: Partial<Omit<FactureRow, "id" | "created_at">>;
+        Relationships: [
+          {
+            foreignKeyName: "factures_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "factures_client_id_fkey";
+            columns: ["client_id"];
+            isOneToOne: false;
+            referencedRelation: "clients";
+            referencedColumns: ["id"];
+          }
+        ];
       };
       chantiers: {
         Row: ChantierRow;
-        Insert: Omit<ChantierRow, "id" | "created_at" | "updated_at">;
+        Insert: {
+          id?: string;
+          user_id: string;
+          client_id: string;
+          titre: string;
+          description?: string | null;
+          statut?: ChantierStatut;
+          date_debut?: string | null;
+          date_fin_prevue?: string | null;
+          date_fin_reelle?: string | null;
+          adresse_chantier?: string | null;
+          progression?: number;
+          budget_prevu?: number | null;
+          budget_reel?: number | null;
+          etapes?: ChantierEtape[];
+          notes?: ChantierNote[];
+          created_at?: string;
+          updated_at?: string;
+        };
         Update: Partial<Omit<ChantierRow, "id" | "created_at">>;
+        Relationships: [
+          {
+            foreignKeyName: "chantiers_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "chantiers_client_id_fkey";
+            columns: ["client_id"];
+            isOneToOne: false;
+            referencedRelation: "clients";
+            referencedColumns: ["id"];
+          }
+        ];
       };
       avis_google: {
         Row: AvisGoogleRow;
-        Insert: Omit<AvisGoogleRow, "id" | "created_at" | "updated_at">;
+        Insert: {
+          id?: string;
+          user_id: string;
+          auteur: string;
+          note: 1 | 2 | 3 | 4 | 5;
+          contenu: string;
+          date_avis: string;
+          reponse?: string | null;
+          date_reponse?: string | null;
+          statut?: AvisStatut;
+          created_at?: string;
+          updated_at?: string;
+        };
         Update: Partial<Omit<AvisGoogleRow, "id" | "created_at">>;
+        Relationships: [
+          {
+            foreignKeyName: "avis_google_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
       };
       automatisations: {
         Row: AutomatisationRow;
-        Insert: Omit<AutomatisationRow, "id" | "created_at" | "updated_at">;
+        Insert: {
+          id?: string;
+          user_id: string;
+          type: AutoStatut;
+          actif?: boolean;
+          config: AutomatisationConfig;
+          derniere_execution?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
         Update: Partial<Omit<AutomatisationRow, "id" | "created_at">>;
+        Relationships: [
+          {
+            foreignKeyName: "automatisations_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
       };
     };
+    Views: Record<never, never>;
+    Functions: Record<never, never>;
+    Enums: Record<never, never>;
+    CompositeTypes: Record<never, never>;
   };
-}
+};
