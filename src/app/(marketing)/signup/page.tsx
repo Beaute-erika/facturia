@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState, Suspense } from "react";
 import { Mail, Lock, Eye, EyeOff, User, ArrowRight, Loader2, CheckCircle2 } from "lucide-react";
-import { createBrowserClient } from "@/lib/supabase";
+import { createBrowserClient } from "@/lib/supabase-client";
 
 const METIERS = ["Plombier", "Électricien", "Maçon", "Carreleur", "Peintre", "Menuisier", "Couvreur", "Chauffagiste", "Autre"];
 

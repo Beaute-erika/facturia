@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase";
+import { createServerClient } from "@/lib/supabase-server";
 import type { Client, ClientType, ClientStatus } from "@/lib/clients-data";
 import type { ClientRow } from "@/lib/database.types";
 

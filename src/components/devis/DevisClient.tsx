@@ -25,7 +25,7 @@ import AIGenerateModal, { type GeneratedDevis } from "./AIGenerateModal";
 import ConvertToFactureModal from "./ConvertToFactureModal";
 import NewDevisModal, { type NewDevisResult } from "./NewDevisModal";
 import { generateDevisPDF, buildDevisDataFromRow, type DevisData } from "@/lib/pdf";
-import { createBrowserClient } from "@/lib/supabase";
+import { createBrowserClient } from "@/lib/supabase-client";
 
 type DevisStatus = "accepté" | "envoyé" | "en attente" | "brouillon" | "refusé";
 
