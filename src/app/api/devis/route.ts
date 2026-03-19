@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { createServerClient, supabaseAdmin } from "@/lib/supabase";
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    // 1. Authentification
+    const supabase = await createServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+    }
 
+    const body = await req.json();
     const {
       client_nom,
+      client_email,
+      client_id: client_id_payload,
       objet,
       date_emission,
       date_validite,
@@ -18,43 +26,101 @@ export async function POST(req: NextRequest) {
       numero,
     } = body;
 
-    // Basic validation
     if (!client_nom || !objet || !numero) {
       return NextResponse.json({ error: "Champs requis manquants" }, { status: 400 });
     }
 
-    // Check Supabase is configured
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    if (!supabaseUrl || supabaseUrl.includes("votre-projet")) {
-      // Supabase not configured — return success with local data
-      return NextResponse.json({ ok: true, local: true, numero });
+    // 2. Résolution du client_id
+    // Utilise l'UUID direct si fourni, sinon cherche par email/nom, sinon crée à la volée
+    let clientId: string | null = client_id_payload ?? null;
+
+    if (clientId) {
+      // Vérifie que le client appartient bien à cet utilisateur
+      const { data: owned } = await supabaseAdmin
+        .from("clients")
+        .select("id")
+        .eq("id", clientId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (!owned) clientId = null; // client_id invalide, on refait la recherche
     }
 
-    // Save devis (without user_id / client_id FK for now — works once auth is wired)
-    // We store client_nom in notes as a fallback until full auth is implemented
+    if (!clientId && client_email) {
+      const { data: byEmail } = await supabaseAdmin
+        .from("clients")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("email", client_email)
+        .maybeSingle();
+      clientId = byEmail?.id ?? null;
+    }
+
+    if (!clientId) {
+      const { data: byName } = await supabaseAdmin
+        .from("clients")
+        .select("id")
+        .eq("user_id", user.id)
+        .ilike("nom", client_nom)
+        .maybeSingle();
+      clientId = byName?.id ?? null;
+    }
+
+    if (!clientId) {
+      // Crée le client à la volée pour satisfaire la FK
+      const { data: created, error: clientErr } = await supabaseAdmin
+        .from("clients")
+        .insert({
+          user_id: user.id,
+          type: "particulier",
+          statut: "prospect",
+          nom: client_nom,
+          prenom: null,
+          raison_sociale: null,
+          email: client_email || null,
+          tel: null,
+          adresse: null,
+          code_postal: null,
+          ville: null,
+          siret: null,
+          notes: null,
+          ca_total: 0,
+        })
+        .select("id")
+        .single();
+
+      if (clientErr || !created) {
+        console.error("[devis/route] client creation failed:", clientErr?.message);
+        return NextResponse.json({ error: "Impossible de créer le client" }, { status: 500 });
+      }
+      clientId = created.id;
+    }
+
+    // 3. Insertion du devis
     const { data, error } = await supabaseAdmin
       .from("devis")
       .insert({
-        // user_id and client_id are required by the schema.
-        // Until auth is wired, we skip the DB insert and return ok.
-        // Remove this comment and add real IDs when auth is connected.
+        user_id: user.id,
+        client_id: clientId,
         numero,
+        statut: "brouillon",
         objet,
         date_emission,
         date_validite,
         lignes,
+        tva_rate: 10,
         montant_ht,
         montant_tva,
         montant_ttc,
-        notes: notes ? `[Client: ${client_nom}] ${notes}` : `[Client: ${client_nom}]`,
-      } as never)
+        notes: notes || null,
+        chorus_pro: false,
+        pdf_url: null,
+      })
       .select()
       .single();
 
     if (error) {
-      // Expected while user_id/client_id FKs aren't satisfied — not a hard failure
-      console.warn("[devis/route] insert skipped:", error.message);
-      return NextResponse.json({ ok: true, local: true, numero });
+      console.error("[devis/route] insert failed:", error.message);
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     return NextResponse.json({ ok: true, data });

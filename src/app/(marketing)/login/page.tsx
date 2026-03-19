@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Mail, Lock, Eye, EyeOff, ArrowRight, Loader2 } from "lucide-react";
+import { createBrowserClient } from "@/lib/supabase";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -16,9 +17,22 @@ export default function LoginPage() {
     setError("");
     if (!email || !password) { setError("Remplissez tous les champs."); return; }
     setLoading(true);
-    // TODO: Supabase auth.signInWithPassword
-    await new Promise((r) => setTimeout(r, 800));
+    const supabase = createBrowserClient();
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
     setLoading(false);
+    if (signInError) {
+      if (signInError.message.includes("Invalid login credentials")) {
+        setError("Email ou mot de passe incorrect.");
+      } else if (signInError.message.includes("Email not confirmed")) {
+        setError("Confirmez votre email avant de vous connecter.");
+      } else {
+        setError(signInError.message);
+      }
+      return;
+    }
     window.location.href = "/app";
   };
 

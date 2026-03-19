@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Resend } from "resend";
 
 export interface SendEmailPayload {
   to: string;
@@ -26,16 +27,32 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Simulate sending delay (replace with real SMTP / Resend / Mailgun in production)
-  await new Promise((r) => setTimeout(r, 800));
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM || "Facturia <noreply@facturia.fr>";
 
-  console.log(`[Facturia] Email envoyé :`, {
+  if (!apiKey || apiKey.startsWith("re_...") || apiKey === "") {
+    return NextResponse.json(
+      { error: "Email non configuré. Ajoutez RESEND_API_KEY dans votre .env.local." },
+      { status: 503 }
+    );
+  }
+
+  const resend = new Resend(apiKey);
+
+  const { error } = await resend.emails.send({
+    from,
     to: payload.to,
     subject: payload.subject,
-    factureId: payload.factureId,
-    attachPdf: payload.attachPdf,
-    sentAt: new Date().toISOString(),
+    text: payload.body,
   });
+
+  if (error) {
+    console.error("[factures/send] Resend error:", error);
+    return NextResponse.json(
+      { error: error.message },
+      { status: 500 }
+    );
+  }
 
   return NextResponse.json({
     success: true,

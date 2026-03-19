@@ -213,15 +213,26 @@ export function generateDevisPDF(devis: DevisData): void {
 }
 
 // Build a DevisData from a table row (for quick download)
-export function buildDevisDataFromRow(row: {
-  id: string;
-  client: string;
-  objet: string;
-  montant: string;
-  date: string;
-  validite: string;
-}): DevisData {
-  const montantHT = parseFloat(row.montant.replace(/[^0-9.]/g, "").replace(",", ".")) || 0;
+const ARTISAN_FALLBACK: DevisData["artisan"] = {
+  nom: "Mon entreprise",
+  adresse: "",
+  siret: "",
+  email: "",
+  tel: "",
+};
+
+export function buildDevisDataFromRow(
+  row: {
+    id: string;
+    client: string;
+    objet: string;
+    montant: string;
+    date: string;
+    validite: string;
+  },
+  artisan?: Partial<DevisData["artisan"]>
+): DevisData {
+  const montantHT = parseFloat(row.montant.replace(/[^0-9,]/g, "").replace(",", ".")) || 0;
   return {
     id: row.id,
     client: row.client,
@@ -239,12 +250,6 @@ export function buildDevisDataFromRow(row: {
     ],
     notes:
       "Devis valable 30 jours. Acompte de 30% à la commande. Paiement sous 30 jours à réception de facture.",
-    artisan: {
-      nom: "Jean Dupont — Plomberie Dupont",
-      adresse: "24 rue des Artisans, 75015 Paris",
-      siret: "123 456 789 00012",
-      email: "jean.dupont@plomberie-dupont.fr",
-      tel: "06 12 34 56 78",
-    },
+    artisan: { ...ARTISAN_FALLBACK, ...artisan },
   };
 }

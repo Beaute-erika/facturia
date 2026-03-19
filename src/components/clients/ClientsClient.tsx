@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Plus, Search, Phone, Mail, MapPin, MoreHorizontal,
   Users, TrendingUp, Star, UserPlus, ChevronRight,
@@ -44,8 +44,51 @@ export default function ClientsClient() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const handleSaveNew = (client: Client) => {
-    setClients([client, ...clients]);
+  // Charge les clients depuis Supabase au montage
+  useEffect(() => {
+    fetch("/api/clients")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.clients?.length) setClients(data.clients);
+      })
+      .catch(() => {
+        // Supabase non configuré — on garde les données statiques
+      });
+  }, []);
+
+  const handleSaveNew = async (client: Client) => {
+    // Appel API pour persister en base
+    try {
+      const res = await fetch("/api/clients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: client.name,
+          type: client.type,
+          email: client.email,
+          phone: client.phone,
+          address: client.address,
+          city: client.city,
+          siret: client.siret,
+          contactName: client.contactName,
+          tags: client.tags,
+          notes: client.notes?.[0]?.content,
+        }),
+      });
+      const data = await res.json();
+      // Si la sauvegarde DB a réussi, utilise le client retourné (avec son vrai UUID)
+      if (res.ok && data.client) {
+        setClients((prev) => [data.client as Client, ...prev]);
+        setSelectedClient(data.client as Client);
+        setShowNewModal(false);
+        showToast(`Client "${data.client.name}" créé`);
+        return;
+      }
+    } catch {
+      // Supabase non configuré — on continue avec le client local
+    }
+    // Fallback local (sans DB)
+    setClients((prev) => [client, ...prev]);
     setShowNewModal(false);
     setSelectedClient(client);
     showToast(`Client "${client.name}" créé`);

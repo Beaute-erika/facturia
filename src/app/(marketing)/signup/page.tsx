@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState, Suspense } from "react";
 import { Mail, Lock, Eye, EyeOff, User, ArrowRight, Loader2, CheckCircle2 } from "lucide-react";
+import { createBrowserClient } from "@/lib/supabase";
 
 const METIERS = ["Plombier", "Électricien", "Maçon", "Carreleur", "Peintre", "Menuisier", "Couvreur", "Chauffagiste", "Autre"];
 
@@ -25,9 +26,28 @@ function SignupForm() {
     if (!form.prenom || !form.email || !form.password) { setError("Remplissez tous les champs obligatoires."); return; }
     if (form.password.length < 8) { setError("Le mot de passe doit contenir au moins 8 caractères."); return; }
     setLoading(true);
-    // TODO: Supabase auth.signUp
-    await new Promise((r) => setTimeout(r, 1000));
+    const supabase = createBrowserClient();
+    const { error: signUpError } = await supabase.auth.signUp({
+      email: form.email,
+      password: form.password,
+      options: {
+        data: {
+          prenom: form.prenom,
+          nom: form.nom,
+          metier: form.metier,
+          plan,
+        },
+      },
+    });
     setLoading(false);
+    if (signUpError) {
+      if (signUpError.message.includes("already registered") || signUpError.message.includes("already been registered")) {
+        setError("Un compte existe déjà avec cet email.");
+      } else {
+        setError(signUpError.message);
+      }
+      return;
+    }
     setDone(true);
   };
 

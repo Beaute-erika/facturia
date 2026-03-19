@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { createBrowserClient as createBrowser, createServerClient as createServer } from "@supabase/auth-helpers-nextjs";
+import { createBrowserClient as createBrowser, createServerClient as createServer } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import type { Database } from "./database.types";
 
@@ -13,12 +13,25 @@ export function createBrowserClient() {
 }
 
 // ─── Server-side (Server Components, Route Handlers) ─────────────────────────
-export function createServerClient() {
-  const cookieStore = cookies();
+export async function createServerClient() {
+  const cookieStore = await cookies();
   return createServer<Database>(
     supabaseUrl,
     supabaseAnonKey,
-    { cookies: { get: (name) => cookieStore.get(name)?.value } }
+    {
+      cookies: {
+        getAll: () => cookieStore.getAll(),
+        setAll: (cookiesToSet) => {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            );
+          } catch {
+            // Route Handler — lecture seule, ignoré
+          }
+        },
+      },
+    }
   );
 }
 

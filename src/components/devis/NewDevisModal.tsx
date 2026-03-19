@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { X, Plus, Trash2, User, UserPlus, ChevronDown, Loader2, Check } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -8,6 +8,7 @@ import { clsx } from "clsx";
 
 interface ClientOption {
   id: string;
+  dbId?: string; // UUID Supabase — présent si client vient de la DB
   label: string; // "Nom Prénom" or raison sociale
   email?: string;
   type: "particulier" | "professionnel";
@@ -37,9 +38,9 @@ interface Props {
   onCreated: (devis: NewDevisResult) => void;
 }
 
-// ─── Default clients (seed list — remplacé par Supabase quand connecté) ──────
+// ─── Seed list utilisé uniquement si l'API ne répond pas ─────────────────────
 
-const DEFAULT_CLIENTS: ClientOption[] = [
+const FALLBACK_CLIENTS: ClientOption[] = [
   { id: "c1", label: "Sophie Girard", email: "sophie@example.fr", type: "particulier" },
   { id: "c2", label: "Famille Martin", email: "martin@example.fr", type: "particulier" },
   { id: "c3", label: "Pierre Moreau", email: "pierre@example.fr", type: "particulier" },
@@ -73,7 +74,25 @@ const in30DaysISO = () => {
 
 export default function NewDevisModal({ onClose, onCreated }: Props) {
   // Client list (mutable so newly created clients appear immediately)
-  const [clients, setClients] = useState<ClientOption[]>(DEFAULT_CLIENTS);
+  const [clients, setClients] = useState<ClientOption[]>(FALLBACK_CLIENTS);
+
+  // Charge les vrais clients depuis la DB
+  useEffect(() => {
+    fetch("/api/clients")
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data.clients?.length) return;
+        const opts: ClientOption[] = data.clients.map((c: { name: string; email: string; type: string; _uuid?: string; id: number }) => ({
+          id: String(c.id),
+          dbId: c._uuid,
+          label: c.name,
+          email: c.email || undefined,
+          type: c.type === "Professionnel" || c.type === "Public" ? "professionnel" : "particulier",
+        }));
+        setClients(opts);
+      })
+      .catch(() => {/* garde FALLBACK_CLIENTS */});
+  }, []);
   const [clientSearch, setClientSearch] = useState("");
   const [selectedClient, setSelectedClient] = useState<ClientOption | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -180,6 +199,7 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
         body: JSON.stringify({
           client_nom: clientLabel,
           client_email: selectedClient?.email,
+          client_id: selectedClient?.dbId ?? null,
           objet: objet.trim(),
           date_emission: dateEmission,
           date_validite: dateValidite,

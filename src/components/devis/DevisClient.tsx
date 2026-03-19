@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Plus,
   Euro,
@@ -24,7 +24,8 @@ import Badge from "@/components/ui/Badge";
 import AIGenerateModal, { type GeneratedDevis } from "./AIGenerateModal";
 import ConvertToFactureModal from "./ConvertToFactureModal";
 import NewDevisModal, { type NewDevisResult } from "./NewDevisModal";
-import { generateDevisPDF, buildDevisDataFromRow } from "@/lib/pdf";
+import { generateDevisPDF, buildDevisDataFromRow, type DevisData } from "@/lib/pdf";
+import { createBrowserClient } from "@/lib/supabase";
 
 type DevisStatus = "accepté" | "envoyé" | "en attente" | "brouillon" | "refusé";
 
@@ -66,6 +67,7 @@ const FILTER_MAP: Record<Filter, DevisStatus | null> = {
 
 export default function DevisClient() {
   const [devis, setDevis] = useState<Devis[]>(initialDevis);
+  const [artisan, setArtisan] = useState<Partial<DevisData["artisan"]>>({});
   const [filter, setFilter] = useState<Filter>("Tous");
   const [search, setSearch] = useState("");
   const [aiOpen, setAiOpen] = useState(false);
@@ -74,6 +76,20 @@ export default function DevisClient() {
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "info" } | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  // Charge le profil artisan pour le PDF
+  useEffect(() => {
+    const supabase = createBrowserClient();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      supabase.from("users").select("prenom,nom,raison_sociale,adresse,ville,code_postal,siret,email,tel").eq("id", user.id).single().then(({ data }) => {
+        if (!data) return;
+        const nom = data.raison_sociale || [data.prenom, data.nom].filter(Boolean).join(" ");
+        const adresse = [data.adresse, [data.code_postal, data.ville].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+        setArtisan({ nom, adresse, siret: data.siret || "", email: data.email || user.email || "", tel: data.tel || "" });
+      });
+    }).catch(() => {});
+  }, []);
 
   const showToast = (msg: string, type: "success" | "info" = "success") => {
     setToast({ msg, type });
@@ -117,7 +133,7 @@ export default function DevisClient() {
   const handleDownload = (d: Devis) => {
     setDownloadingId(d.id);
     setTimeout(() => {
-      generateDevisPDF(buildDevisDataFromRow(d));
+      generateDevisPDF(buildDevisDataFromRow(d, artisan));
       setDownloadingId(null);
       showToast(`PDF ${d.id} téléchargé`, "info");
     }, 300);
