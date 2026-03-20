@@ -11,15 +11,11 @@ import {
 } from "recharts";
 import Card from "@/components/ui/Card";
 
-const data = [
-  { month: "Sep", revenue: 18500, invoiced: 22000 },
-  { month: "Oct", revenue: 21000, invoiced: 25500 },
-  { month: "Nov", revenue: 19800, invoiced: 23000 },
-  { month: "Déc", revenue: 24200, invoiced: 28000 },
-  { month: "Jan", revenue: 22100, invoiced: 26500 },
-  { month: "Fév", revenue: 26800, invoiced: 31000 },
-  { month: "Mar", revenue: 28400, invoiced: 33500 },
-];
+interface ChartDataPoint {
+  month: string;
+  revenue: number;
+  invoiced: number;
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -39,7 +35,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
-export default function RevenueChart() {
+export default function RevenueChart({ data }: { data: ChartDataPoint[] }) {
   return (
     <Card className="col-span-2">
       <div className="flex items-center justify-between mb-6">

@@ -5,7 +5,7 @@ import Card from "@/components/ui/Card";
 interface KPICardProps {
   title: string;
   value: string;
-  change: number;
+  change?: number;
   period?: string;
   icon: LucideIcon;
   color?: string;
@@ -17,13 +17,13 @@ export default function KPICard({
   title,
   value,
   change,
-  period = "vs mois dernier",
+  period,
   icon: Icon,
   color = "primary",
   prefix,
   suffix,
 }: KPICardProps) {
-  const isPositive = change >= 0;
+  const isPositive = (change ?? 0) >= 0;
   const TrendIcon = isPositive ? TrendingUp : TrendingDown;
 
   return (
@@ -39,15 +39,17 @@ export default function KPICard({
         )}>
           <Icon className="w-5 h-5" />
         </div>
-        <span className={clsx(
-          "flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-lg",
-          isPositive
-            ? "text-status-success bg-status-success/10"
-            : "text-status-error bg-status-error/10"
-        )}>
-          <TrendIcon className="w-3 h-3" />
-          {Math.abs(change)}%
-        </span>
+        {change !== undefined && (
+          <span className={clsx(
+            "flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-lg",
+            isPositive
+              ? "text-status-success bg-status-success/10"
+              : "text-status-error bg-status-error/10"
+          )}>
+            <TrendIcon className="w-3 h-3" />
+            {Math.abs(change)}%
+          </span>
+        )}
       </div>
       <div>
         <p className="text-text-muted text-sm font-medium mb-1">{title}</p>
