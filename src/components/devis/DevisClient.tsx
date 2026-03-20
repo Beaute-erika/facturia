@@ -166,7 +166,7 @@ export default function DevisClient() {
       {/* Toast */}
       {toast && (
         <div className={clsx(
-          "fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-card border animate-fade-in",
+          "fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-card border animate-fade-in",
           toast.type === "success"
             ? "bg-primary/10 border-primary/30 text-primary"
             : "bg-status-info/10 border-status-info/30 text-status-info"
@@ -201,7 +201,7 @@ export default function DevisClient() {
               <span className="text-primary font-medium">{totalEnCours.toLocaleString("fr-FR")} € en cours</span>
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="hidden md:flex gap-2">
             <Button
               variant="secondary"
               icon={Sparkles}
@@ -217,7 +217,7 @@ export default function DevisClient() {
         </div>
 
         {/* KPIs */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
           {[
             {
               label: "En attente",
@@ -258,8 +258,56 @@ export default function DevisClient() {
           ))}
         </div>
 
-        {/* Table card */}
-        <Card className="p-0 overflow-hidden">
+        {/* Mobile card list */}
+        <div className="md:hidden space-y-2">
+          {filtered.length === 0 ? (
+            <div className="py-12 text-center text-text-muted">
+              <FileCheck className="w-10 h-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">Aucun devis trouvé</p>
+            </div>
+          ) : filtered.map((d) => {
+            const sc = STATUS_CONFIG[d.status];
+            const canConvert = d.status === "accepté" || d.status === "envoyé";
+            return (
+              <div key={d.id} className="bg-surface border border-surface-border rounded-xl p-4">
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    <p className="font-mono text-sm font-semibold text-primary">{d.id}</p>
+                    <p className="text-sm font-semibold text-text-primary mt-0.5">{d.client}</p>
+                    <p className="text-xs text-text-muted mt-0.5 line-clamp-1">{d.objet}</p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1.5">
+                    <Badge variant={sc.variant} size="sm" dot>{sc.label}</Badge>
+                    <span className="font-mono text-sm font-bold text-text-primary">{d.montant}</span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between pt-2 border-t border-surface-border">
+                  <span className="text-xs text-text-muted">{d.date} — valide jusqu&apos;au {d.validite}</span>
+                  <div className="flex items-center gap-2">
+                    {canConvert && (
+                      <button
+                        onClick={() => setConvertTarget(d)}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-primary bg-primary/10 text-xs font-semibold"
+                      >
+                        <Receipt className="w-3.5 h-3.5" />
+                        Facturer
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleDownload(d)}
+                      className="p-1.5 rounded-lg text-text-muted hover:bg-surface-active"
+                    >
+                      <Download className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Desktop Table card */}
+        <Card className="hidden md:block p-0 overflow-hidden">
           {/* Toolbar */}
           <div className="px-5 py-4 border-b border-surface-border flex items-center gap-3">
             <div className="relative flex-1 max-w-xs">
@@ -419,6 +467,14 @@ export default function DevisClient() {
           </div>
         </Card>
       </div>
+
+      {/* Mobile FAB */}
+      <button
+        onClick={() => setNewDevisOpen(true)}
+        className="fixed bottom-20 right-4 z-20 md:hidden w-14 h-14 bg-primary rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+      >
+        <Plus className="w-6 h-6 text-background" strokeWidth={2.5} />
+      </button>
     </>
   );
 }

@@ -208,7 +208,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* KPI Grid */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         <KPICard
           title="CA ce mois"
           value={Math.round(caMois).toLocaleString("fr-FR")}
@@ -241,7 +241,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Main content grid */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Revenue chart — spans 2 cols */}
         <RevenueChart data={chartData} />
 
@@ -274,9 +274,9 @@ export default async function DashboardPage() {
       </div>
 
       {/* Bottom grid */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Recent activity */}
-        <div className="col-span-2">
+        <div className="md:col-span-2">
           <RecentActivity activities={activities} />
         </div>
 

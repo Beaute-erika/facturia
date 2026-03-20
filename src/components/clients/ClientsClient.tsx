@@ -143,7 +143,7 @@ export default function ClientsClient() {
     <>
       {/* Toast */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl bg-primary/10 border border-primary/30 text-primary shadow-card animate-fade-in">
+        <div className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl bg-primary/10 border border-primary/30 text-primary shadow-card animate-fade-in">
           <span className="text-sm font-medium">{toast}</span>
         </div>
       )}
@@ -172,13 +172,13 @@ export default function ClientsClient() {
               </span>
             </p>
           </div>
-          <Button variant="primary" icon={Plus} onClick={() => setShowNewModal(true)}>
+          <Button variant="primary" icon={Plus} onClick={() => setShowNewModal(true)} className="hidden md:flex">
             Nouveau client
           </Button>
         </div>
 
         {/* KPIs */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
           {kpis.map((k, i) => (
             <Card key={i} className="py-4">
               <div className={clsx("w-9 h-9 rounded-xl flex items-center justify-center mb-3", k.bg)}>
@@ -192,7 +192,7 @@ export default function ClientsClient() {
 
         {/* Filters */}
         <Card className="py-3 px-4">
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap overflow-x-auto">
             {/* Search */}
             <div className="flex-1 min-w-[200px] relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
@@ -235,8 +235,44 @@ export default function ClientsClient() {
           </div>
         </Card>
 
-        {/* Table */}
-        <Card className="p-0 overflow-hidden">
+        {/* Mobile card list */}
+        <div className="md:hidden space-y-2">
+          {filtered.length === 0 ? (
+            <div className="py-12 text-center">
+              <Users className="w-10 h-10 mx-auto mb-3 text-text-muted opacity-30" />
+              <p className="text-sm text-text-muted">Aucun client trouvé</p>
+            </div>
+          ) : filtered.map((client) => {
+            const initials = client.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
+            return (
+              <div
+                key={client.id}
+                onClick={() => setSelectedClient(client)}
+                className="bg-surface border border-surface-border rounded-xl p-4 flex items-center gap-3 cursor-pointer active:bg-surface-hover transition-colors"
+              >
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center border border-primary/10 flex-shrink-0">
+                  <span className="text-xs font-bold text-primary">{initials}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <p className="text-sm font-semibold text-text-primary truncate">{client.name}</p>
+                    <Badge variant={STATUS_BADGE[client.status]?.variant || "default"} size="sm" dot>
+                      {client.status}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-text-muted">
+                    <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{client.city}</span>
+                    <span className="font-mono font-semibold text-text-primary">{client.ca.toLocaleString("fr-FR")} €</span>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-text-muted flex-shrink-0" />
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Desktop Table */}
+        <Card className="hidden md:block p-0 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[700px]">
               <thead>
@@ -387,6 +423,13 @@ export default function ClientsClient() {
           </div>
         </Card>
       </div>
+      {/* Mobile FAB */}
+      <button
+        onClick={() => setShowNewModal(true)}
+        className="fixed bottom-20 right-4 z-20 md:hidden w-14 h-14 bg-primary rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+      >
+        <Plus className="w-6 h-6 text-background" strokeWidth={2.5} />
+      </button>
     </>
   );
 }

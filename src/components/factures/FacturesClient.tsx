@@ -148,7 +148,7 @@ export default function FacturesClient() {
       {/* Toast */}
       {toast && (
         <div className={clsx(
-          "fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-card border animate-fade-in",
+          "fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-card border animate-fade-in",
           toastColors[toast.type]
         )}>
           <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
@@ -180,15 +180,15 @@ export default function FacturesClient() {
           <div>
             <h1 className="text-2xl font-bold text-text-primary">Factures</h1>
             <p className="text-text-muted mt-1">
-              {totalAttente.toLocaleString("fr-FR")} € en attente •{" "}
+              {totalAttente.toLocaleString("fr-FR")} € en attente
               {totalRetard > 0 && (
-                <span className="text-status-error font-medium">
+                <> • <span className="text-status-error font-medium">
                   {totalRetard.toLocaleString("fr-FR")} € en retard
-                </span>
+                </span></>
               )}
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="hidden md:flex gap-2">
             <Button variant="secondary" icon={Building2} size="sm">
               Chorus Pro
             </Button>
@@ -199,7 +199,7 @@ export default function FacturesClient() {
         </div>
 
         {/* KPIs */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
           {[
             { label: "Payées (mois)", value: `${totalPayees.toLocaleString("fr-FR")} €`, icon: CheckCircle2, color: "text-primary", bg: "bg-primary/10" },
             { label: "En attente", value: `${totalAttente.toLocaleString("fr-FR")} €`, icon: Clock, color: "text-status-warning", bg: "bg-status-warning/10" },
@@ -237,8 +237,64 @@ export default function FacturesClient() {
           </div>
         )}
 
-        {/* Table */}
-        <Card className="p-0 overflow-hidden">
+        {/* Mobile card list */}
+        <div className="md:hidden space-y-2">
+          {filtered.length === 0 ? (
+            <div className="py-12 text-center">
+              <Receipt className="w-10 h-10 mx-auto mb-3 text-text-muted opacity-30" />
+              <p className="text-sm text-text-muted">Aucune facture trouvée</p>
+            </div>
+          ) : filtered.map((f) => {
+            const sc = STATUS_CONFIG[f.status];
+            return (
+              <div
+                key={f.id}
+                onClick={() => setPreviewTarget(f)}
+                className="bg-surface border border-surface-border rounded-xl p-4 cursor-pointer active:bg-surface-hover transition-colors"
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <div className="min-w-0 flex-1 pr-3">
+                    <p className="font-mono text-sm font-semibold text-primary">{f.id}</p>
+                    <p className="text-sm font-semibold text-text-primary mt-0.5">{f.client}</p>
+                    <p className="text-xs text-text-muted mt-0.5 line-clamp-1">{f.objet}</p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                    <Badge variant={sc.variant} size="sm" dot>{sc.label}</Badge>
+                    <span className="font-mono text-sm font-bold text-text-primary">{f.total}</span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between pt-2 border-t border-surface-border">
+                  <span className={clsx(
+                    "text-xs",
+                    f.status === "en retard" ? "text-status-error font-semibold" : "text-text-muted"
+                  )}>
+                    Échéance : {f.echeance}
+                  </span>
+                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                    {(f.status === "envoyée" || f.status === "en retard") && (
+                      <button
+                        onClick={() => handleMarkPaid(f.id)}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-primary bg-primary/10 text-xs font-semibold"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        Payée
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleDownload(f)}
+                      className="p-1.5 rounded-lg text-text-muted hover:bg-surface-active"
+                    >
+                      <Download className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Desktop Table */}
+        <Card className="hidden md:block p-0 overflow-hidden">
           {/* Toolbar */}
           <div className="px-5 py-4 border-b border-surface-border flex items-center gap-3 flex-wrap">
             <div className="relative flex-1 max-w-xs">
@@ -417,6 +473,13 @@ export default function FacturesClient() {
           </div>
         </Card>
       </div>
+
+      {/* Mobile FAB */}
+      <button
+        className="fixed bottom-20 right-4 z-20 md:hidden w-14 h-14 bg-primary rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+      >
+        <Plus className="w-6 h-6 text-background" strokeWidth={2.5} />
+      </button>
     </>
   );
 }

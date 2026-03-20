@@ -3,66 +3,25 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard,
-  Users,
-  FileText,
-  Receipt,
-  HardHat,
-  BarChart3,
-  Settings,
-  Zap,
-  Building2,
-  ChevronRight,
-  LogOut,
-  Sparkles,
+  LayoutDashboard, Users, FileText, Receipt, HardHat, BarChart3,
+  Settings, Zap, Building2, ChevronRight, LogOut, Sparkles, X,
 } from "lucide-react";
 import { clsx } from "clsx";
 
+interface SidebarProps {
+  onClose?: () => void;
+}
+
 const navItems = [
-  {
-    label: "Dashboard",
-    href: "/app",
-    icon: LayoutDashboard,
-  },
-  {
-    label: "Clients",
-    href: "/clients",
-    icon: Users,
-    badge: "124",
-  },
-  {
-    label: "Devis",
-    href: "/devis",
-    icon: FileText,
-    badge: "8",
-    badgeType: "warning" as const,
-  },
-  {
-    label: "Factures",
-    href: "/factures",
-    icon: Receipt,
-    badge: "3",
-    badgeType: "error" as const,
-  },
-  {
-    label: "Chantiers",
-    href: "/chantiers",
-    icon: HardHat,
-  },
-  {
-    label: "Analytics",
-    href: "/analytics",
-    icon: BarChart3,
-  },
+  { label: "Dashboard", href: "/app", icon: LayoutDashboard },
+  { label: "Clients", href: "/clients", icon: Users, badge: "124" },
+  { label: "Devis", href: "/devis", icon: FileText, badge: "8", badgeType: "warning" as const },
+  { label: "Factures", href: "/factures", icon: Receipt, badge: "3", badgeType: "error" as const },
+  { label: "Chantiers", href: "/chantiers", icon: HardHat },
+  { label: "Analytics", href: "/analytics", icon: BarChart3 },
 ];
 
-const bottomItems = [
-  {
-    label: "Paramètres",
-    href: "/settings",
-    icon: Settings,
-  },
-];
+const bottomItems = [{ label: "Paramètres", href: "/settings", icon: Settings }];
 
 const badgeColors = {
   default: "bg-surface-active text-text-secondary",
@@ -71,29 +30,32 @@ const badgeColors = {
   success: "bg-primary/20 text-primary",
 };
 
-export default function Sidebar() {
+export default function Sidebar({ onClose }: SidebarProps) {
   const pathname = usePathname();
 
   return (
-    <aside className="w-64 min-w-[256px] flex-shrink-0 h-full flex flex-col bg-background-secondary border-r border-surface-border">
+    <aside className="w-64 h-full flex flex-col bg-background-secondary border-r border-surface-border">
       {/* Logo */}
-      <div className="px-5 py-5 border-b border-surface-border">
+      <div className="px-5 py-5 border-b border-surface-border flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 bg-primary rounded-xl flex items-center justify-center shadow-glow">
             <Zap className="w-5 h-5 text-background" strokeWidth={2.5} />
           </div>
           <div>
-            <span className="text-lg font-bold text-text-primary tracking-tight">
-              Facturia
-            </span>
+            <span className="text-lg font-bold text-text-primary tracking-tight">Facturia</span>
             <div className="flex items-center gap-1.5">
-              <span className="text-[10px] text-text-muted font-medium uppercase tracking-wider">
-                Pro Plan
-              </span>
+              <span className="text-[10px] text-text-muted font-medium uppercase tracking-wider">Pro Plan</span>
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
             </div>
           </div>
         </div>
+        {/* Close button — mobile only */}
+        <button
+          onClick={onClose}
+          className="md:hidden w-8 h-8 flex items-center justify-center rounded-xl text-text-muted hover:text-text-primary hover:bg-surface-hover transition-all"
+        >
+          <X className="w-4 h-4" />
+        </button>
       </div>
 
       {/* User info */}
@@ -112,9 +74,7 @@ export default function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        <p className="px-3 mb-2 text-[10px] font-semibold text-text-muted uppercase tracking-widest">
-          Navigation
-        </p>
+        <p className="px-3 mb-2 text-[10px] font-semibold text-text-muted uppercase tracking-widest">Navigation</p>
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = pathname === item.href;
@@ -122,10 +82,8 @@ export default function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={clsx(
-                "sidebar-item",
-                isActive && "active"
-              )}
+              onClick={onClose}
+              className={clsx("sidebar-item", isActive && "active")}
             >
               <Icon className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={isActive ? 2.5 : 2} />
               <span className="flex-1 text-sm font-medium">{item.label}</span>
@@ -141,11 +99,8 @@ export default function Sidebar() {
           );
         })}
 
-        {/* AI Agent Section */}
         <div className="pt-4 pb-1">
-          <p className="px-3 mb-2 text-[10px] font-semibold text-text-muted uppercase tracking-widest">
-            Intelligence
-          </p>
+          <p className="px-3 mb-2 text-[10px] font-semibold text-text-muted uppercase tracking-widest">Intelligence</p>
         </div>
         <button className="sidebar-item w-full group">
           <div className="w-[18px] h-[18px] flex-shrink-0 relative">
@@ -153,9 +108,7 @@ export default function Sidebar() {
             <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-primary rounded-full border border-background-secondary animate-pulse" />
           </div>
           <span className="flex-1 text-sm font-medium text-left">Agent IA</span>
-          <span className="text-[10px] font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded-md">
-            BETA
-          </span>
+          <span className="text-[10px] font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded-md">BETA</span>
         </button>
         <button className="sidebar-item w-full">
           <Building2 className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={2} />
@@ -170,11 +123,7 @@ export default function Sidebar() {
           const Icon = item.icon;
           const isActive = pathname === item.href;
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={clsx("sidebar-item", isActive && "active")}
-            >
+            <Link key={item.href} href={item.href} onClick={onClose} className={clsx("sidebar-item", isActive && "active")}>
               <Icon className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={2} />
               <span className="text-sm font-medium">{item.label}</span>
             </Link>
