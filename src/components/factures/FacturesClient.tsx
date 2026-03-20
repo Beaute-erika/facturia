@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Plus,
   AlertTriangle,
@@ -39,13 +39,6 @@ interface Facture {
   chorus: boolean;
 }
 
-const initialFactures: Facture[] = [
-  { id: "FA-2024-089", client: "Martin Leblanc", objet: "Rénovation salle de bain", montant: "3 450 €", tva: "690 €", total: "4 140 €", date: "14 Mar. 2026", echeance: "14 Avr. 2026", status: "payée", chorus: false },
-  { id: "FA-2024-088", client: "SCI Verdure", objet: "Travaux réseau eau froide", montant: "6 800 €", tva: "1 360 €", total: "8 160 €", date: "10 Mar. 2026", echeance: "10 Avr. 2026", status: "envoyée", chorus: true },
-  { id: "FA-2024-087", client: "M. Bernard", objet: "Dépannage chaudière", montant: "380 €", tva: "76 €", total: "456 €", date: "25 Fév. 2026", echeance: "27 Mar. 2026", status: "en retard", chorus: false },
-  { id: "FA-2024-086", client: "Mairie de Vanves", objet: "Maintenance préventive bâtiment", montant: "12 400 €", tva: "2 480 €", total: "14 880 €", date: "01 Mar. 2026", echeance: "31 Mar. 2026", status: "envoyée", chorus: true },
-  { id: "FA-2024-085", client: "Famille Martin", objet: "Installation chauffe-eau thermodynamique", montant: "2 100 €", tva: "420 €", total: "2 520 €", date: "20 Fév. 2026", echeance: "22 Mar. 2026", status: "brouillon", chorus: false },
-];
 
 const STATUS_CONFIG: Record<FactureStatus, { variant: "success" | "warning" | "error" | "info" | "default"; label: string }> = {
   payée: { variant: "success", label: "Payée" },
@@ -65,7 +58,7 @@ const FILTER_MAP: Record<Filter, FactureStatus | null> = {
 };
 
 export default function FacturesClient() {
-  const [factures, setFactures] = useState<Facture[]>(initialFactures);
+  const [factures, setFactures] = useState<Facture[]>([]);
   const [filter, setFilter] = useState<Filter>("Toutes");
   const [search, setSearch] = useState("");
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
@@ -73,6 +66,14 @@ export default function FacturesClient() {
   const [previewTarget, setPreviewTarget] = useState<Facture | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "info" | "warning" } | null>(null);
+
+  // Charge les factures depuis Supabase
+  useEffect(() => {
+    fetch("/api/factures")
+      .then((r) => r.json())
+      .then((data) => { if (data.factures) setFactures(data.factures); })
+      .catch(() => {});
+  }, []);
 
   const showToast = (msg: string, type: "success" | "info" | "warning" = "success") => {
     setToast({ msg, type });

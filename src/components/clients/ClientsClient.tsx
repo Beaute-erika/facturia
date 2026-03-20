@@ -30,7 +30,7 @@ const STATUS_BADGE: Record<string, { variant: "success" | "warning" | "info" | "
 };
 
 export default function ClientsClient() {
-  const [clients, setClients] = useState<Client[]>(CLIENTS_DATA);
+  const [clients, setClients] = useState<Client[]>([]);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<Filter>("Tous");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("Tous");
@@ -51,9 +51,7 @@ export default function ClientsClient() {
       .then((data) => {
         if (data.clients?.length) setClients(data.clients);
       })
-      .catch(() => {
-        // Supabase non configuré — on garde les données statiques
-      });
+      .catch(() => {});
   }, []);
 
   const handleSaveNew = async (client: Client) => {

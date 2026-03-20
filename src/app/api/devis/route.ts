@@ -1,6 +1,54 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, supabaseAdmin } from "@/lib/supabase-server";
 
+const STATUT_MAP: Record<string, string> = {
+  brouillon: "brouillon",
+  envoye: "envoyé",
+  accepte: "accepté",
+  refuse: "refusé",
+  expire: "en attente",
+};
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
+}
+
+export async function GET() {
+  try {
+    const supabase = await createServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+
+    const { data, error } = await supabase
+      .from("devis")
+      .select("*, clients(nom, prenom, raison_sociale)")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
+    const devis = (data ?? []).map((row) => {
+      const c = row.clients as { nom: string; prenom: string | null; raison_sociale: string | null } | null;
+      const client = c ? (c.prenom ? `${c.prenom} ${c.nom}` : c.raison_sociale || c.nom) : "—";
+      return {
+        id: row.numero,
+        client,
+        objet: row.objet,
+        montant: `${Math.round(row.montant_ht ?? 0).toLocaleString("fr-FR")} €`,
+        date: formatDate(row.date_emission),
+        validite: formatDate(row.date_validite),
+        status: STATUT_MAP[row.statut] ?? "brouillon",
+        _uuid: row.id,
+      };
+    });
+
+    return NextResponse.json({ devis });
+  } catch (err) {
+    console.error("[devis/GET]", err);
+    return NextResponse.json({ error: "Erreur serveur" }, { status: 500 });
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     // 1. Authentification

@@ -39,13 +39,6 @@ interface Devis {
   status: DevisStatus;
 }
 
-const initialDevis: Devis[] = [
-  { id: "DV-2024-156", client: "Sophie Girard", objet: "Installation chaudière gaz", montant: "5 800 €", date: "12 Mar. 2026", validite: "12 Avr. 2026", status: "envoyé" },
-  { id: "DV-2024-155", client: "Famille Martin", objet: "Réfection salle de bain complète", montant: "8 200 €", date: "10 Mar. 2026", validite: "10 Avr. 2026", status: "en attente" },
-  { id: "DV-2024-154", client: "Pierre Moreau", objet: "Dépannage urgent + réparation fuite", montant: "450 €", date: "08 Mar. 2026", validite: "08 Avr. 2026", status: "accepté" },
-  { id: "DV-2024-153", client: "SCI Verdure", objet: "Mise aux normes réseau eau chaude", montant: "14 500 €", date: "05 Mar. 2026", validite: "05 Avr. 2026", status: "brouillon" },
-  { id: "DV-2024-152", client: "Mairie de Vanves", objet: "Révision chauffage bâtiment A", montant: "22 800 €", date: "01 Mar. 2026", validite: "01 Avr. 2026", status: "refusé" },
-];
 
 const STATUS_CONFIG: Record<DevisStatus, { variant: "success" | "warning" | "error" | "info" | "default"; label: string }> = {
   accepté: { variant: "success", label: "Accepté" },
@@ -66,7 +59,7 @@ const FILTER_MAP: Record<Filter, DevisStatus | null> = {
 };
 
 export default function DevisClient() {
-  const [devis, setDevis] = useState<Devis[]>(initialDevis);
+  const [devis, setDevis] = useState<Devis[]>([]);
   const [artisan, setArtisan] = useState<Partial<DevisData["artisan"]>>({});
   const [filter, setFilter] = useState<Filter>("Tous");
   const [search, setSearch] = useState("");
@@ -76,6 +69,14 @@ export default function DevisClient() {
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "info" } | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  // Charge les devis depuis Supabase
+  useEffect(() => {
+    fetch("/api/devis")
+      .then((r) => r.json())
+      .then((data) => { if (data.devis) setDevis(data.devis); })
+      .catch(() => {});
+  }, []);
 
   // Charge le profil artisan pour le PDF
   useEffect(() => {
