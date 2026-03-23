@@ -31,6 +31,7 @@ function SignupForm() {
       email: form.email,
       password: form.password,
       options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
         data: {
           prenom: form.prenom,
           nom: form.nom,
