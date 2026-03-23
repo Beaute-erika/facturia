@@ -16,7 +16,7 @@ function rowToClient(row: ClientRow): Client {
     prospect: "prospect",
   };
   return {
-    id: parseInt(row.id, 36) || Date.now(), // stable numeric id from uuid
+    id: parseInt(row.id.substring(0, 8), 16), // stable numeric id from uuid prefix
     name: row.prenom ? `${row.prenom} ${row.nom}` : row.raison_sociale || row.nom,
     type: typeMap[row.type] ?? "Particulier",
     status: statusMap[row.statut] ?? "prospect",

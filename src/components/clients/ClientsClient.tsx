@@ -51,7 +51,7 @@ export default function ClientsClient() {
       .then((data) => {
         if (data.clients?.length) setClients(data.clients);
       })
-      .catch(() => {});
+      .catch((err) => { console.error("[ClientsClient] fetch /api/clients:", err); });
   }, []);
 
   const handleSaveNew = async (client: Client) => {

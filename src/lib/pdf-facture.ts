@@ -278,17 +278,28 @@ export function generateFacturePDF(facture: FactureData): void {
   doc.save(`${facture.id}.pdf`);
 }
 
-export function buildFactureDataFromRow(row: {
-  id: string;
-  client: string;
-  objet: string;
-  montant: string;
-  tva: string;
-  total: string;
-  date: string;
-  echeance: string;
-  chorus: boolean;
-}): FactureData {
+const ARTISAN_FALLBACK: FactureData["artisan"] = {
+  nom: "Mon entreprise",
+  adresse: "",
+  siret: "",
+  email: "",
+  tel: "",
+};
+
+export function buildFactureDataFromRow(
+  row: {
+    id: string;
+    client: string;
+    objet: string;
+    montant: string;
+    tva: string;
+    total: string;
+    date: string;
+    echeance: string;
+    chorus: boolean;
+  },
+  artisan?: Partial<FactureData["artisan"]>
+): FactureData {
   const ht = parseFloat(row.montant.replace(/[^0-9]/g, "")) || 0;
   const tvaRate = ht > 0
     ? Math.round((parseFloat(row.tva.replace(/[^0-9]/g, "")) / ht) * 100)
@@ -311,15 +322,7 @@ export function buildFactureDataFromRow(row: {
       },
     ],
     modePaiement: "Virement bancaire",
-    iban: "FR76 3000 6000 0112 3456 7890 189",
     notes: "Merci pour votre confiance. Paiement sous 30 jours.",
-    artisan: {
-      nom: "Jean Dupont — Plomberie Dupont",
-      adresse: "24 rue des Artisans, 75015 Paris",
-      siret: "123 456 789 00012",
-      tvaNum: "FR12 123456789",
-      email: "jean.dupont@plomberie-dupont.fr",
-      tel: "06 12 34 56 78",
-    },
+    artisan: { ...ARTISAN_FALLBACK, ...artisan },
   };
 }

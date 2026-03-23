@@ -22,7 +22,8 @@ import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
 import SendEmailModal from "./SendEmailModal";
 import FacturePreviewModal from "./FacturePreviewModal";
-import { generateFacturePDF, buildFactureDataFromRow } from "@/lib/pdf-facture";
+import { generateFacturePDF, buildFactureDataFromRow, type FactureData } from "@/lib/pdf-facture";
+import { createBrowserClient } from "@/lib/supabase-client";
 
 type FactureStatus = "payée" | "envoyée" | "en retard" | "brouillon";
 
@@ -59,6 +60,7 @@ const FILTER_MAP: Record<Filter, FactureStatus | null> = {
 
 export default function FacturesClient() {
   const [factures, setFactures] = useState<Facture[]>([]);
+  const [artisan, setArtisan] = useState<Partial<FactureData["artisan"]>>({});
   const [filter, setFilter] = useState<Filter>("Toutes");
   const [search, setSearch] = useState("");
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
@@ -72,7 +74,21 @@ export default function FacturesClient() {
     fetch("/api/factures")
       .then((r) => r.json())
       .then((data) => { if (data.factures) setFactures(data.factures); })
-      .catch(() => {});
+      .catch((err) => { console.error("[FacturesClient] fetch /api/factures:", err); });
+  }, []);
+
+  // Charge le profil artisan pour les PDFs
+  useEffect(() => {
+    const supabase = createBrowserClient();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      supabase.from("users").select("prenom,nom,raison_sociale,adresse,ville,code_postal,siret,email,tel").eq("id", user.id).single().then(({ data }) => {
+        if (!data) return;
+        const nom = data.raison_sociale || [data.prenom, data.nom].filter(Boolean).join(" ");
+        const adresse = [data.adresse, [data.code_postal, data.ville].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+        setArtisan({ nom, adresse, siret: data.siret || "", email: data.email || user.email || "", tel: data.tel || "" });
+      });
+    }).catch((err) => { console.error("[FacturesClient] fetch artisan profile:", err); });
   }, []);
 
   const showToast = (msg: string, type: "success" | "info" | "warning" = "success") => {
@@ -83,7 +99,7 @@ export default function FacturesClient() {
   const handleDownload = (f: Facture) => {
     setDownloadingId(f.id);
     setTimeout(() => {
-      generateFacturePDF(buildFactureDataFromRow(f));
+      generateFacturePDF(buildFactureDataFromRow(f, artisan));
       setDownloadingId(null);
       showToast(`PDF ${f.id} téléchargé`, "info");
     }, 300);

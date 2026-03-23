@@ -136,31 +136,38 @@ export default async function DashboardPage() {
   });
 
   // ── Activité récente ──────────────────────────────────────────────────────
-  const factureItems: ActivityItem[] = (recentFacturesRes.data ?? []).map((f) => ({
-    id: f.id,
-    type: "facture",
-    title: f.numero,
-    subtitle: f.objet,
-    amount: f.montant_ttc != null ? `${Math.round(f.montant_ttc).toLocaleString("fr-FR")} €` : null,
-    status: f.statut === "payee" ? "payée" : f.statut === "en_retard" ? "en retard" : "envoyée",
-    statusVariant: f.statut === "payee" ? "success" : f.statut === "en_retard" ? "error" : "warning",
-    time: relativeTime(f.updated_at),
+  const rawFactureItems = (recentFacturesRes.data ?? []).map((f) => ({
+    item: {
+      id: f.id,
+      type: "facture" as const,
+      title: f.numero,
+      subtitle: f.objet,
+      amount: f.montant_ttc != null ? `${Math.round(f.montant_ttc).toLocaleString("fr-FR")} €` : null,
+      status: f.statut === "payee" ? "payée" : f.statut === "en_retard" ? "en retard" : "envoyée",
+      statusVariant: (f.statut === "payee" ? "success" : f.statut === "en_retard" ? "error" : "warning") as ActivityItem["statusVariant"],
+      time: relativeTime(f.updated_at),
+    },
+    updatedAt: f.updated_at,
   }));
 
-  const devisItems: ActivityItem[] = (recentDevisRes.data ?? []).map((d) => ({
-    id: d.id,
-    type: "devis",
-    title: d.numero,
-    subtitle: d.objet,
-    amount: d.montant_ttc != null ? `${Math.round(d.montant_ttc).toLocaleString("fr-FR")} €` : null,
-    status: d.statut === "accepte" ? "accepté" : d.statut === "refuse" ? "refusé" : d.statut === "expire" ? "expiré" : "en attente",
-    statusVariant: d.statut === "accepte" ? "success" : d.statut === "refuse" ? "error" : "warning",
-    time: relativeTime(d.updated_at),
+  const rawDevisItems = (recentDevisRes.data ?? []).map((d) => ({
+    item: {
+      id: d.id,
+      type: "devis" as const,
+      title: d.numero,
+      subtitle: d.objet,
+      amount: d.montant_ttc != null ? `${Math.round(d.montant_ttc).toLocaleString("fr-FR")} €` : null,
+      status: d.statut === "accepte" ? "accepté" : d.statut === "refuse" ? "refusé" : d.statut === "expire" ? "expiré" : "en attente",
+      statusVariant: (d.statut === "accepte" ? "success" : d.statut === "refuse" ? "error" : "warning") as ActivityItem["statusVariant"],
+      time: relativeTime(d.updated_at),
+    },
+    updatedAt: d.updated_at,
   }));
 
-  const activities = [...factureItems, ...devisItems]
-    .sort((a, b) => a.time.localeCompare(b.time))
-    .slice(0, 5);
+  const activities = [...rawFactureItems, ...rawDevisItems]
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    .slice(0, 5)
+    .map(({ item }) => item);
 
   // ── Chantiers à venir ─────────────────────────────────────────────────────
   const upcomingChantiers = (upcomingChantiersRes.data ?? []).map((c) => ({
