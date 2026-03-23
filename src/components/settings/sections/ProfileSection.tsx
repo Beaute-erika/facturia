@@ -45,13 +45,20 @@ export default function ProfileSection({ onSave }: ProfileSectionProps) {
   // Charger le profil depuis Supabase
   useEffect(() => {
     const supabase = createBrowserClient();
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) { setLoading(false); return; }
-      const { data } = await supabase
+    supabase.auth.getUser().then(async ({ data: { user }, error: authErr }) => {
+      if (authErr || !user) { setLoading(false); return; }
+
+      const { data, error: fetchErr } = await supabase
         .from("users")
         .select("*")
         .eq("id", user.id)
         .single();
+
+      if (fetchErr && fetchErr.code !== "PGRST116") {
+        // PGRST116 = row not found (normal pour un nouveau compte)
+        console.error("[ProfileSection] fetch error:", fetchErr);
+      }
+
       if (data) {
         setForm({
           prenom: data.prenom ?? "",
@@ -71,48 +78,92 @@ export default function ProfileSection({ onSave }: ProfileSectionProps) {
           mentionsLegales: data.mentions_legales ?? "TVA non applicable, art. 293 B du CGI",
         });
       } else {
-        // Profil pas encore créé — pré-remplir l'email
         setForm((f) => ({ ...f, email: user.email ?? "" }));
       }
       setLoading(false);
-    }).catch(() => setLoading(false));
+    }).catch((err) => {
+      console.error("[ProfileSection] unexpected load error:", err);
+      setLoading(false);
+    });
   }, []);
 
   const handleSave = async () => {
     setError("");
     setSaving(true);
-    const supabase = createBrowserClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setError("Session expirée. Reconnectez-vous."); setSaving(false); return; }
+    try {
+      const supabase = createBrowserClient();
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        setError("Session expirée. Reconnectez-vous.");
+        setSaving(false);
+        return;
+      }
 
-    const { error: updateError } = await supabase
-      .from("users")
-      .update({
-        prenom: form.prenom || undefined,
-        nom: form.nom || undefined,
-        metier: form.metier || undefined,
-        raison_sociale: form.raisonSociale || null,
-        forme_juridique: form.formeJuridique || undefined,
-        siret: form.siret || null,
-        tva_num: form.tvaNum || null,
-        adresse: form.adresse || null,
-        code_postal: form.codePostal || null,
-        ville: form.ville || null,
-        tel: form.tel || null,
-        email: form.email || undefined,
-        site: form.site || null,
-        signature_email: form.signature || null,
-        mentions_legales: form.mentionsLegales || null,
-      })
-      .eq("id", user.id);
+      // email est géré par Supabase Auth — on ne le met pas dans users pour éviter le conflit UNIQUE
+      const { error: updateError, count } = await supabase
+        .from("users")
+        .update({
+          prenom: form.prenom || "",
+          nom: form.nom || "",
+          metier: form.metier || "Artisan",
+          raison_sociale: form.raisonSociale || null,
+          forme_juridique: form.formeJuridique || "Auto-entrepreneur",
+          siret: form.siret || null,
+          tva_num: form.tvaNum || null,
+          adresse: form.adresse || null,
+          code_postal: form.codePostal || null,
+          ville: form.ville || null,
+          tel: form.tel || null,
+          site: form.site || null,
+          signature_email: form.signature || null,
+          mentions_legales: form.mentionsLegales || null,
+        }, { count: "exact" })
+        .eq("id", user.id);
 
-    setSaving(false);
-    if (updateError) {
-      setError("Erreur lors de l'enregistrement. Réessayez.");
-      return;
+      setSaving(false);
+
+      if (updateError) {
+        console.error("[ProfileSection] update error:", updateError);
+        setError(`Erreur : ${updateError.message}`);
+        return;
+      }
+
+      if (count === 0) {
+        // La ligne n'existe pas encore — on la crée
+        const { error: insertError } = await supabase
+          .from("users")
+          .insert({
+            id: user.id,
+            email: user.email ?? "",
+            prenom: form.prenom || "",
+            nom: form.nom || "",
+            metier: form.metier || "Artisan",
+            raison_sociale: form.raisonSociale || null,
+            forme_juridique: form.formeJuridique || "Auto-entrepreneur",
+            siret: form.siret || null,
+            tva_num: form.tvaNum || null,
+            adresse: form.adresse || null,
+            code_postal: form.codePostal || null,
+            ville: form.ville || null,
+            tel: form.tel || null,
+            site: form.site || null,
+            signature_email: form.signature || null,
+            mentions_legales: form.mentionsLegales || null,
+          });
+        if (insertError) {
+          console.error("[ProfileSection] insert error:", insertError);
+          setError(`Erreur création profil : ${insertError.message}`);
+          return;
+        }
+      }
+
+      setSaved(true);
+      setTimeout(() => { setSaved(false); onSave(); }, 1500);
+    } catch (err) {
+      console.error("[ProfileSection] unexpected error:", err);
+      setError("Erreur inattendue. Réessayez.");
+      setSaving(false);
     }
-    setSaved(true);
-    setTimeout(() => { setSaved(false); onSave(); }, 1500);
   };
 
   const initials = `${form.prenom[0] ?? ""}${form.nom[0] ?? ""}`.toUpperCase() || "?";

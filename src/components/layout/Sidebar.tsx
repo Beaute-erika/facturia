@@ -101,7 +101,11 @@ export default function Sidebar({ onClose }: SidebarProps) {
     <aside className="w-64 h-full flex flex-col bg-background-secondary border-r border-surface-border">
       {/* Logo */}
       <div className="px-5 py-5 border-b border-surface-border flex items-center justify-between">
-        <div className="flex items-center gap-3">
+        <Link
+          href="/app"
+          onClick={onClose}
+          className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
+        >
           <div className="w-9 h-9 bg-primary rounded-xl flex items-center justify-center shadow-glow">
             <Zap className="w-5 h-5 text-background" strokeWidth={2.5} />
           </div>
@@ -112,7 +116,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
             </div>
           </div>
-        </div>
+        </Link>
         <button
           onClick={onClose}
           className="md:hidden w-8 h-8 flex items-center justify-center rounded-xl text-text-muted hover:text-text-primary hover:bg-surface-hover transition-all"
