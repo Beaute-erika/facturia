@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
+import { createServerClient } from "@/lib/supabase-server";
 
 export interface SendEmailPayload {
   to: string;
@@ -10,6 +11,13 @@ export interface SendEmailPayload {
 }
 
 export async function POST(req: NextRequest) {
+  // Auth guard
+  const supabase = await createServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+  }
+
   const payload: SendEmailPayload = await req.json();
 
   if (!payload.to || !payload.subject || !payload.factureId) {

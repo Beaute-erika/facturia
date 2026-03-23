@@ -5,7 +5,6 @@ import type { Database } from "./database.types";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 export async function createServerClient() {
   const cookieStore = await cookies();
@@ -25,11 +24,16 @@ export async function createServerClient() {
   });
 }
 
-export const supabaseAdmin = createClient<Database>(
-  supabaseUrl,
-  supabaseServiceKey,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-);
+export function getSupabaseAdmin() {
+  return createClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+}
+
+/** @deprecated Appelez getSupabaseAdmin() — supabaseAdmin est désormais une fonction */
+export const supabaseAdmin = getSupabaseAdmin;
 
 export type SupabaseServerClient = Awaited<ReturnType<typeof createServerClient>>;
 

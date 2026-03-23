@@ -164,10 +164,10 @@ function Hero() {
             Commencer gratuitement <ArrowRight className="w-4 h-4" />
           </Link>
           <Link
-            href="/app"
+            href="/login"
             className="inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl border border-surface-border text-text-primary font-semibold text-base hover:bg-surface-active transition-colors"
           >
-            Voir la démo
+            Se connecter
           </Link>
         </div>
 

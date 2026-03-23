@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
 
     if (clientId) {
       // Vérifie que le client appartient bien à cet utilisateur
-      const { data: owned } = await supabaseAdmin
+      const { data: owned } = await supabaseAdmin()
         .from("clients")
         .select("id")
         .eq("id", clientId)
@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!clientId && client_email) {
-      const { data: byEmail } = await supabaseAdmin
+      const { data: byEmail } = await supabaseAdmin()
         .from("clients")
         .select("id")
         .eq("user_id", user.id)
@@ -104,7 +104,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!clientId) {
-      const { data: byName } = await supabaseAdmin
+      const { data: byName } = await supabaseAdmin()
         .from("clients")
         .select("id")
         .eq("user_id", user.id)
@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
 
     if (!clientId) {
       // Crée le client à la volée pour satisfaire la FK
-      const { data: created, error: clientErr } = await supabaseAdmin
+      const { data: created, error: clientErr } = await supabaseAdmin()
         .from("clients")
         .insert({
           user_id: user.id,
@@ -144,7 +144,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Insertion du devis
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await supabaseAdmin()
       .from("devis")
       .insert({
         user_id: user.id,

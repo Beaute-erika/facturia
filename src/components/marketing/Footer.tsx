@@ -10,7 +10,7 @@ const LINKS = {
   Application: [
     { href: "/login", label: "Se connecter" },
     { href: "/signup", label: "Créer un compte" },
-    { href: "/app", label: "Tableau de bord" },
+    { href: "/signup", label: "Essai gratuit" },
   ],
   Légal: [
     { href: "/mentions-legales", label: "Mentions légales" },
