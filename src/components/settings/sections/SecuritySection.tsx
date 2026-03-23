@@ -1,16 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Save, Key, Shield, Smartphone, LogOut, Eye, EyeOff, Monitor, Clock } from "lucide-react";
+import { Save, Key, Shield, Smartphone, LogOut, Eye, EyeOff, Monitor, Loader2 } from "lucide-react";
 import { clsx } from "clsx";
 import Toggle from "@/components/ui/Toggle";
 import Badge from "@/components/ui/Badge";
-
-const SESSIONS = [
-  { id: "1", device: "MacBook Pro — Chrome", location: "Paris, FR", date: "Maintenant", current: true },
-  { id: "2", device: "iPhone 15 — Safari", location: "Paris, FR", date: "Il y a 2h", current: false },
-  { id: "3", device: "Windows PC — Edge", location: "Lyon, FR", date: "Hier 14:32", current: false },
-];
+import { createBrowserClient } from "@/lib/supabase-client";
 
 export default function SecuritySection({ onSave }: { onSave: () => void }) {
   const [showCurrent, setShowCurrent] = useState(false);
@@ -19,18 +14,40 @@ export default function SecuritySection({ onSave }: { onSave: () => void }) {
   const [twoFA, setTwoFA] = useState(false);
   const [twoFAStep, setTwoFAStep] = useState<"idle" | "setup" | "done">("idle");
   const [passwords, setPasswords] = useState({ current: "", newPwd: "", confirm: "" });
+  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [sessions, setSessions] = useState(SESSIONS);
+  const [pwdError, setPwdError] = useState("");
 
   const setP = (k: string, v: string) => setPasswords((p) => ({ ...p, [k]: v }));
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    setPwdError("");
+    if (!passwords.newPwd && !passwords.current) return;
+
+    if (!passwords.current) { setPwdError("Entrez votre mot de passe actuel."); return; }
+    if (passwords.newPwd.length < 8) { setPwdError("Le nouveau mot de passe doit contenir au moins 8 caractères."); return; }
+    if (passwords.newPwd !== passwords.confirm) { setPwdError("Les mots de passe ne correspondent pas."); return; }
+
+    setSaving(true);
+    const supabase = createBrowserClient();
+
+    // Vérifier le mot de passe actuel en tentant une re-authentification
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.email) { setPwdError("Session expirée. Reconnectez-vous."); setSaving(false); return; }
+
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: user.email,
+      password: passwords.current,
+    });
+    if (signInError) { setPwdError("Mot de passe actuel incorrect."); setSaving(false); return; }
+
+    const { error: updateError } = await supabase.auth.updateUser({ password: passwords.newPwd });
+    setSaving(false);
+    if (updateError) { setPwdError(updateError.message); return; }
+
+    setPasswords({ current: "", newPwd: "", confirm: "" });
     setSaved(true);
     setTimeout(() => { setSaved(false); onSave(); }, 1500);
-  };
-
-  const revokeSession = (id: string) => {
-    setSessions((s) => s.filter((sess) => sess.id !== id));
   };
 
   return (
@@ -42,6 +59,12 @@ export default function SecuritySection({ onSave }: { onSave: () => void }) {
           <h3 className="text-sm font-semibold text-text-primary">Mot de passe</h3>
           <div className="flex-1 h-px bg-surface-border ml-2" />
         </div>
+
+        {pwdError && (
+          <div className="mb-3 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+            {pwdError}
+          </div>
+        )}
 
         <div className="space-y-3">
           {[
@@ -148,57 +171,43 @@ export default function SecuritySection({ onSave }: { onSave: () => void }) {
           <h3 className="text-sm font-semibold text-text-primary">Sessions actives</h3>
           <div className="flex-1 h-px bg-surface-border ml-2" />
         </div>
-
-        <div className="space-y-2">
-          {sessions.map((sess) => (
-            <div key={sess.id} className="flex items-center justify-between p-3 rounded-xl bg-background border border-surface-border">
-              <div className="flex items-start gap-3">
-                <Monitor className="w-4 h-4 text-text-muted flex-shrink-0 mt-0.5" />
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-text-primary">{sess.device}</p>
-                    {sess.current && <Badge variant="success" size="sm">Actuelle</Badge>}
-                  </div>
-                  <div className="flex items-center gap-3 mt-0.5">
-                    <span className="text-[10px] text-text-muted">{sess.location}</span>
-                    <span className="text-[10px] text-text-muted flex items-center gap-1">
-                      <Clock className="w-2.5 h-2.5" /> {sess.date}
-                    </span>
-                  </div>
+        <div className="p-4 rounded-xl bg-background border border-surface-border">
+          <div className="flex items-center justify-between">
+            <div className="flex items-start gap-3">
+              <Monitor className="w-4 h-4 text-text-muted flex-shrink-0 mt-0.5" />
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-medium text-text-primary">Session actuelle</p>
+                  <Badge variant="success" size="sm">Actuelle</Badge>
                 </div>
+                <p className="text-[10px] text-text-muted mt-0.5">Navigateur actuel</p>
               </div>
-              {!sess.current && (
-                <button
-                  onClick={() => revokeSession(sess.id)}
-                  className="text-xs text-error hover:text-error/80 font-medium flex items-center gap-1 transition-colors"
-                >
-                  <LogOut className="w-3.5 h-3.5" /> Révoquer
-                </button>
-              )}
             </div>
-          ))}
+            <button
+              onClick={async () => {
+                const supabase = createBrowserClient();
+                await supabase.auth.signOut({ scope: "global" });
+                window.location.href = "/login";
+              }}
+              className="text-xs text-status-error hover:text-status-error/80 font-medium flex items-center gap-1 transition-colors"
+            >
+              <LogOut className="w-3.5 h-3.5" /> Déconnecter tout
+            </button>
+          </div>
         </div>
-
-        {sessions.length > 1 && (
-          <button
-            onClick={() => setSessions((s) => s.filter((sess) => sess.current))}
-            className="mt-3 text-xs text-error hover:text-error/80 font-medium flex items-center gap-1.5 transition-colors"
-          >
-            <LogOut className="w-3.5 h-3.5" /> Déconnecter toutes les autres sessions
-          </button>
-        )}
       </div>
 
       <div className="flex justify-end">
         <button
           onClick={handleSave}
+          disabled={saving}
           className={clsx(
             "flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all",
-            saved ? "bg-primary/20 text-primary border border-primary/30" : "bg-primary text-background hover:bg-primary-400 hover:shadow-glow"
+            saved ? "bg-primary/20 text-primary border border-primary/30" : "bg-primary text-background hover:bg-primary-400 hover:shadow-glow disabled:opacity-60"
           )}
         >
-          <Save className="w-4 h-4" />
-          {saved ? "Enregistré ✓" : "Enregistrer"}
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          {saved ? "Enregistré ✓" : saving ? "Enregistrement…" : "Enregistrer le mot de passe"}
         </button>
       </div>
     </div>

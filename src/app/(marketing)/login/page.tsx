@@ -1,11 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { Mail, Lock, Eye, EyeOff, ArrowRight, Loader2 } from "lucide-react";
 import { createBrowserClient } from "@/lib/supabase-client";
 
-export default function LoginPage() {
+function LoginForm() {
+  const params = useSearchParams();
+  const redirectTo = params.get("redirect") ?? "/app";
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);
@@ -33,13 +37,14 @@ export default function LoginPage() {
       }
       return;
     }
-    window.location.href = "/app";
+    // Sécurité : on n'accepte que les redirections internes
+    const safe = redirectTo.startsWith("/") && !redirectTo.startsWith("//") ? redirectTo : "/app";
+    window.location.href = safe;
   };
 
   return (
     <div className="min-h-[calc(100vh-64px)] flex items-center justify-center px-6 py-20">
       <div className="w-full max-w-sm">
-        {/* Logo */}
         <div className="text-center mb-8">
           <div className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center text-background text-2xl font-black mx-auto mb-4">F</div>
           <h1 className="text-2xl font-black text-text-primary">Bon retour !</h1>
@@ -112,5 +117,13 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen" />}>
+      <LoginForm />
+    </Suspense>
   );
 }

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { Camera, Save, Building2, Phone, Mail, Globe, MapPin, Hash, FileSignature } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Camera, Save, Building2, Phone, Mail, Globe, MapPin, Hash, FileSignature, Loader2 } from "lucide-react";
 import { clsx } from "clsx";
+import { createBrowserClient } from "@/lib/supabase-client";
 
 const METIERS = [
   "Plombier", "Électricien", "Maçon", "Carreleur", "Peintre",
@@ -18,32 +19,111 @@ interface ProfileSectionProps {
 
 export default function ProfileSection({ onSave }: ProfileSectionProps) {
   const [form, setForm] = useState({
-    prenom: "Jean",
-    nom: "Dupont",
+    prenom: "",
+    nom: "",
     metier: "Plombier",
-    raisonSociale: "Plomberie Dupont",
+    raisonSociale: "",
     formeJuridique: "Auto-entrepreneur",
-    siret: "123 456 789 00012",
-    tvaNum: "FR12 123456789",
-    adresse: "24 rue des Artisans",
-    codePostal: "75015",
-    ville: "Paris",
-    tel: "06 12 34 56 78",
-    email: "jean.dupont@plomberie-dupont.fr",
-    site: "www.plomberie-dupont.fr",
-    signature: "Cordialement,\nJean Dupont\nPlomberie Dupont\n06 12 34 56 78\njean.dupont@plomberie-dupont.fr",
+    siret: "",
+    tvaNum: "",
+    adresse: "",
+    codePostal: "",
+    ville: "",
+    tel: "",
+    email: "",
+    site: "",
+    signature: "",
     mentionsLegales: "TVA non applicable, art. 293 B du CGI",
   });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
-  const handleSave = () => {
+  // Charger le profil depuis Supabase
+  useEffect(() => {
+    const supabase = createBrowserClient();
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) { setLoading(false); return; }
+      const { data } = await supabase
+        .from("users")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+      if (data) {
+        setForm({
+          prenom: data.prenom ?? "",
+          nom: data.nom ?? "",
+          metier: data.metier ?? "Plombier",
+          raisonSociale: data.raison_sociale ?? "",
+          formeJuridique: data.forme_juridique ?? "Auto-entrepreneur",
+          siret: data.siret ?? "",
+          tvaNum: data.tva_num ?? "",
+          adresse: data.adresse ?? "",
+          codePostal: data.code_postal ?? "",
+          ville: data.ville ?? "",
+          tel: data.tel ?? "",
+          email: data.email ?? user.email ?? "",
+          site: data.site ?? "",
+          signature: data.signature_email ?? `Cordialement,\n${data.prenom ?? ""} ${data.nom ?? ""}`,
+          mentionsLegales: data.mentions_legales ?? "TVA non applicable, art. 293 B du CGI",
+        });
+      } else {
+        // Profil pas encore créé — pré-remplir l'email
+        setForm((f) => ({ ...f, email: user.email ?? "" }));
+      }
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    setError("");
+    setSaving(true);
+    const supabase = createBrowserClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setError("Session expirée. Reconnectez-vous."); setSaving(false); return; }
+
+    const { error: updateError } = await supabase
+      .from("users")
+      .update({
+        prenom: form.prenom || undefined,
+        nom: form.nom || undefined,
+        metier: form.metier || undefined,
+        raison_sociale: form.raisonSociale || null,
+        forme_juridique: form.formeJuridique || undefined,
+        siret: form.siret || null,
+        tva_num: form.tvaNum || null,
+        adresse: form.adresse || null,
+        code_postal: form.codePostal || null,
+        ville: form.ville || null,
+        tel: form.tel || null,
+        email: form.email || undefined,
+        site: form.site || null,
+        signature_email: form.signature || null,
+        mentions_legales: form.mentionsLegales || null,
+      })
+      .eq("id", user.id);
+
+    setSaving(false);
+    if (updateError) {
+      setError("Erreur lors de l'enregistrement. Réessayez.");
+      return;
+    }
     setSaved(true);
     setTimeout(() => { setSaved(false); onSave(); }, 1500);
   };
 
-  const initials = `${form.prenom[0] ?? ""}${form.nom[0] ?? ""}`.toUpperCase();
+  const initials = `${form.prenom[0] ?? ""}${form.nom[0] ?? ""}`.toUpperCase() || "?";
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -65,6 +145,12 @@ export default function ProfileSection({ onSave }: ProfileSectionProps) {
           </button>
         </div>
       </div>
+
+      {error && (
+        <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+          {error}
+        </div>
+      )}
 
       {/* Identity */}
       <Section title="Identité">
@@ -144,15 +230,16 @@ export default function ProfileSection({ onSave }: ProfileSectionProps) {
       <div className="flex justify-end">
         <button
           onClick={handleSave}
+          disabled={saving}
           className={clsx(
             "flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all",
             saved
               ? "bg-primary/20 text-primary border border-primary/30"
-              : "bg-primary text-background hover:bg-primary-400 hover:shadow-glow"
+              : "bg-primary text-background hover:bg-primary-400 hover:shadow-glow disabled:opacity-60"
           )}
         >
-          <Save className="w-4 h-4" />
-          {saved ? "Enregistré ✓" : "Enregistrer"}
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          {saved ? "Enregistré ✓" : saving ? "Enregistrement…" : "Enregistrer"}
         </button>
       </div>
     </div>

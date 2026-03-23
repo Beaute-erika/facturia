@@ -193,7 +193,14 @@ export default function Sidebar({ onClose }: SidebarProps) {
             </Link>
           );
         })}
-        <button className="sidebar-item w-full text-status-error hover:text-status-error hover:bg-status-error/10">
+        <button
+          className="sidebar-item w-full text-status-error hover:text-status-error hover:bg-status-error/10"
+          onClick={async () => {
+            const supabase = createBrowserClient();
+            await supabase.auth.signOut();
+            window.location.href = "/login";
+          }}
+        >
           <LogOut className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={2} />
           <span className="text-sm font-medium">Déconnexion</span>
         </button>
