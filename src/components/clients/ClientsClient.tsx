@@ -11,7 +11,7 @@ import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
 import ClientDrawer from "./ClientDrawer";
 import NewClientModal from "./NewClientModal";
-import { CLIENTS_DATA, type Client, type ClientType } from "@/lib/clients-data";
+import { type Client, type ClientType } from "@/lib/clients-data";
 
 type Filter = "Tous" | "Particuliers" | "Professionnels" | "Public";
 type StatusFilter = "Tous" | "actif" | "prospect" | "inactif" | "devis";
