@@ -167,6 +167,7 @@ export default function NewFactureModal({ onClose, onCreated }: Props) {
           client_nom: clientLabel,
           client_email: selectedClient?.email,
           client_id: selectedClient?.dbId ?? null,
+          client_type: selectedClient?.type ?? "particulier",
           objet: objet.trim(),
           date_emission: dateEmission,
           date_echeance: dateEcheance,

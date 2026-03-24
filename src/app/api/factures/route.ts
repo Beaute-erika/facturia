@@ -24,7 +24,7 @@ export async function POST(req: Request) {
     if (!user) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
 
     const body = await req.json();
-    const { client_nom, client_email, client_id, objet, date_emission, date_echeance, lignes, montant_ht, montant_tva, montant_ttc, notes, numero } = body;
+    const { client_nom, client_email, client_id, client_type, objet, date_emission, date_echeance, lignes, montant_ht, montant_tva, montant_ttc, notes, numero } = body;
 
     if (!client_nom || !objet || !numero) {
       return NextResponse.json({ error: "Champs requis manquants (client_nom, objet, numero)" }, { status: 400 });
@@ -48,7 +48,12 @@ export async function POST(req: Request) {
         // Créer le client à la volée
         const { data: created, error: clientErr } = await supabase
           .from("clients")
-          .insert({ user_id: user.id, nom: client_nom.trim(), email: client_email ?? null })
+          .insert({
+            user_id: user.id,
+            nom: client_nom.trim(),
+            email: client_email ?? null,
+            type: (client_type === "professionnel" ? "professionnel" : "particulier") as "particulier" | "professionnel",
+          })
           .select("id")
           .single();
         if (clientErr) throw clientErr;
