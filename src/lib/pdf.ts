@@ -61,7 +61,7 @@ async function fitImage(
   return { width, height };
 }
 
-export async function generateDevisPDF(devis: DevisData): Promise<void> {
+export async function generateDevisPDF(devis: DevisData): Promise<Blob> {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const W = doc.internal.pageSize.getWidth();
 
@@ -256,7 +256,7 @@ export async function generateDevisPDF(devis: DevisData): Promise<void> {
     { align: "center" }
   );
 
-  doc.save(`${devis.id}.pdf`);
+  return doc.output("blob");
 }
 
 // Build a DevisData from a table row (for quick download)

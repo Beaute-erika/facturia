@@ -137,9 +137,30 @@ export default function DevisClient() {
       return;
     }
     setDownloadingId(d.id);
-    await generateDevisPDF(buildDevisDataFromRow(d, artisan));
+    const blob = await generateDevisPDF(buildDevisDataFromRow(d, artisan));
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${d.id}.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
     setDownloadingId(null);
     showToast(`PDF ${d.id} téléchargé`, "info");
+  };
+
+  // Preview PDF in new tab
+  const handlePreview = async (d: Devis) => {
+    console.log("[DevisClient] aperçu clic:", d.id);
+    if (!artisan.nom) {
+      showToast("Profil artisan en cours de chargement, réessayez dans un instant", "info");
+      return;
+    }
+    setDownloadingId(d.id);
+    const blob = await generateDevisPDF(buildDevisDataFromRow(d, artisan));
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank");
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    setDownloadingId(null);
   };
 
   // Delete devis
@@ -420,10 +441,7 @@ export default function DevisClient() {
                           {/* View */}
                           <button
                             title="Aperçu PDF"
-                            onClick={() => {
-                              console.log("[DevisClient] aperçu clic:", d.id);
-                              handleDownload(d);
-                            }}
+                            onClick={() => handlePreview(d)}
                             className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-active transition-colors"
                           >
                             <Eye className="w-4 h-4" />
