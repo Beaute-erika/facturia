@@ -101,6 +101,7 @@ export default function NewFactureModal({ onClose, onCreated }: Props) {
   const [notes, setNotes] = useState("");
   const [lignes, setLignes] = useState<Ligne[]>([newLigne()]);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const filteredClients = useMemo(
@@ -151,6 +152,7 @@ export default function NewFactureModal({ onClose, onCreated }: Props) {
   const handleSave = async () => {
     if (!validate()) return;
     setSaving(true);
+    setSaveError(null);
 
     const numero = `FAC-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`;
     const clientLabel = selectedClient!.label;
@@ -158,7 +160,7 @@ export default function NewFactureModal({ onClose, onCreated }: Props) {
     const echeanceFormatted = new Date(dateEcheance).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
 
     try {
-      await fetch("/api/factures", {
+      const res = await fetch("/api/factures", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -184,12 +186,22 @@ export default function NewFactureModal({ onClose, onCreated }: Props) {
           numero,
         }),
       });
-    } catch {
-      // Supabase non configuré — continue en local
+      if (!res.ok && res.status !== 404) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || `Erreur serveur (${res.status})`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Erreur inconnue";
+      // 404 = pas encore de handler POST → création locale uniquement
+      if (!msg.includes("404")) {
+        setSaving(false);
+        setSaveError(msg);
+        return;
+      }
     }
 
     setSaving(false);
-    onCreated({
+    const result: NewFactureResult = {
       id: numero,
       client: clientLabel,
       objet: objet.trim(),
@@ -200,7 +212,9 @@ export default function NewFactureModal({ onClose, onCreated }: Props) {
       echeance: echeanceFormatted,
       status: "brouillon",
       chorus: false,
-    });
+    };
+    onCreated(result);
+    onClose();
   };
 
   return (
@@ -400,9 +414,12 @@ export default function NewFactureModal({ onClose, onCreated }: Props) {
 
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-surface-border flex-shrink-0">
-          <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl text-sm text-text-muted hover:text-text-primary hover:bg-surface-active transition-colors">
-            Annuler
-          </button>
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl text-sm text-text-muted hover:text-text-primary hover:bg-surface-active transition-colors">
+              Annuler
+            </button>
+            {saveError && <p className="text-xs text-status-error">{saveError}</p>}
+          </div>
           <button type="button" onClick={handleSave} disabled={saving}
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-background font-semibold text-sm hover:bg-primary-400 hover:shadow-glow transition-all disabled:opacity-60"
           >
