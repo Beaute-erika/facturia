@@ -22,6 +22,7 @@ import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
 import SendEmailModal from "./SendEmailModal";
 import FacturePreviewModal from "./FacturePreviewModal";
+import NewFactureModal, { type NewFactureResult } from "./NewFactureModal";
 import { generateFacturePDF, buildFactureDataFromRow, type FactureData } from "@/lib/pdf-facture";
 import { createBrowserClient } from "@/lib/supabase-client";
 
@@ -67,6 +68,7 @@ export default function FacturesClient() {
   const [emailTarget, setEmailTarget] = useState<Facture | null>(null);
   const [previewTarget, setPreviewTarget] = useState<Facture | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [newFactureOpen, setNewFactureOpen] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "info" | "warning" } | null>(null);
 
   // Charge les factures depuis Supabase
@@ -127,6 +129,11 @@ export default function FacturesClient() {
     setFactures((prev) => prev.filter((f) => f.id !== id));
     setMenuOpen(null);
     showToast("Facture supprimée", "info");
+  };
+
+  const handleNewFacture = (result: NewFactureResult) => {
+    setFactures((prev) => [result, ...prev]);
+    showToast(`Facture ${result.id} créée`);
   };
 
   const handleSend = (f: Facture) => {
@@ -192,6 +199,12 @@ export default function FacturesClient() {
           onMarkPaid={() => handleMarkPaid(previewTarget.id)}
         />
       )}
+      {newFactureOpen && (
+        <NewFactureModal
+          onClose={() => setNewFactureOpen(false)}
+          onCreated={handleNewFacture}
+        />
+      )}
 
       <div className="space-y-6 animate-fade-in">
         {/* Header */}
@@ -211,7 +224,11 @@ export default function FacturesClient() {
             <Button variant="secondary" icon={Building2} size="sm">
               Chorus Pro
             </Button>
-            <Button variant="primary" icon={Plus}>
+            <Button
+              variant="primary"
+              icon={Plus}
+              onClick={() => { console.log("[FacturesClient] nouvelle facture clic"); setNewFactureOpen(true); }}
+            >
               Nouvelle facture
             </Button>
           </div>
@@ -495,6 +512,7 @@ export default function FacturesClient() {
 
       {/* Mobile FAB */}
       <button
+        onClick={() => { console.log("[FacturesClient] nouvelle facture clic (FAB)"); setNewFactureOpen(true); }}
         className="fixed bottom-20 right-4 z-20 md:hidden w-14 h-14 bg-primary rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform"
       >
         <Plus className="w-6 h-6 text-background" strokeWidth={2.5} />
