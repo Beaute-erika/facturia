@@ -27,15 +27,38 @@ export interface DevisData {
   };
 }
 
-async function loadImageAsBase64(url: string): Promise<string> {
+async function loadImageAsBase64(url: string): Promise<{ data: string; format: string }> {
   const res = await fetch(url);
+  if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
   const blob = await res.blob();
-  return new Promise((resolve, reject) => {
+  const mimeType = blob.type || "image/png";
+  const rawFormat = mimeType.split("/")[1].toUpperCase();
+  const format = rawFormat === "SVG+XML" ? "SVG" : rawFormat;
+  const data = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => resolve(reader.result as string);
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
+  return { data, format };
+}
+
+async function fitImage(
+  data: string,
+  maxWidth: number,
+  maxHeight: number
+): Promise<{ width: number; height: number }> {
+  const img = new Image();
+  img.src = data;
+  await new Promise<void>((resolve) => { img.onload = () => resolve(); });
+  const ratio = img.width / img.height;
+  let width = maxWidth;
+  let height = width / ratio;
+  if (height > maxHeight) {
+    height = maxHeight;
+    width = height * ratio;
+  }
+  return { width, height };
 }
 
 export async function generateDevisPDF(devis: DevisData): Promise<void> {
@@ -54,8 +77,9 @@ export async function generateDevisPDF(devis: DevisData): Promise<void> {
 
   if (devis.artisan.logo_url) {
     try {
-      const base64 = await loadImageAsBase64(devis.artisan.logo_url);
-      doc.addImage(base64, 14, 3, 32, 20);
+      const { data, format } = await loadImageAsBase64(devis.artisan.logo_url);
+      const { width, height } = await fitImage(data, 32, 20);
+      doc.addImage(data, format, 14, 3, width, height);
     } catch {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(20);
