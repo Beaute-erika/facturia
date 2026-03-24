@@ -86,7 +86,9 @@ export default function FacturesClient() {
         if (!data) return;
         const nom = data.raison_sociale || [data.prenom, data.nom].filter(Boolean).join(" ");
         const adresse = [data.adresse, [data.code_postal, data.ville].filter(Boolean).join(" ")].filter(Boolean).join(", ");
-        setArtisan({ nom, adresse, siret: data.siret || "", email: data.email || user.email || "", tel: data.tel || "", logo_url: data.logo_url ?? null });
+        const artisanData = { nom, adresse, siret: data.siret || "", email: data.email || user.email || "", tel: data.tel || "", logo_url: data.logo_url ?? null };
+        console.log("[FacturesClient] artisan chargé:", artisanData);
+        setArtisan(artisanData);
       });
     }).catch((err) => { console.error("[FacturesClient] fetch artisan profile:", err); });
   }, []);
@@ -98,7 +100,9 @@ export default function FacturesClient() {
 
   const handleDownload = async (f: Facture) => {
     setDownloadingId(f.id);
-    await generateFacturePDF(buildFactureDataFromRow(f, artisan));
+    const factureData = buildFactureDataFromRow(f, artisan);
+    console.log("[FacturesClient] factureData.artisan.logo_url:", factureData.artisan.logo_url);
+    await generateFacturePDF(factureData);
     setDownloadingId(null);
     showToast(`PDF ${f.id} téléchargé`, "info");
   };

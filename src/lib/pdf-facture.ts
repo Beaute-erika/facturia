@@ -38,15 +38,23 @@ const GRAY: [number, number, number] = [100, 116, 139];
 const LIGHT: [number, number, number] = [241, 245, 249];
 const RED: [number, number, number] = [239, 68, 68];
 
-async function loadImageAsBase64(url: string): Promise<string> {
+async function loadImageAsBase64(url: string): Promise<{ data: string; format: string }> {
+  console.log("[PDF] loadImageAsBase64 url:", url);
   const res = await fetch(url);
+  console.log("[PDF] fetch status:", res.status, "content-type:", res.headers.get("content-type"));
+  if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
   const blob = await res.blob();
-  return new Promise((resolve, reject) => {
+  const mimeType = blob.type || "image/png";
+  const rawFormat = mimeType.split("/")[1].toUpperCase(); // PNG, JPEG, WEBP…
+  const format = rawFormat === "SVG+XML" ? "SVG" : rawFormat;
+  const data = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => resolve(reader.result as string);
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
+  console.log("[PDF] image format détecté:", format, "| data length:", data.length);
+  return { data, format };
 }
 
 export async function generateFacturePDF(facture: FactureData): Promise<void> {
@@ -57,11 +65,20 @@ export async function generateFacturePDF(facture: FactureData): Promise<void> {
   doc.setFillColor(...GREEN);
   doc.rect(0, 0, W, 28, "F");
 
+  console.log("[PDF] generateFacturePDF logo_url:", facture.artisan.logo_url);
+
+  // Rectangle rouge de test — vérifie que la zone header est bien visible
+  doc.setFillColor(239, 68, 68);
+  doc.rect(14, 3, 32, 20, "F");
+
   if (facture.artisan.logo_url) {
     try {
-      const base64 = await loadImageAsBase64(facture.artisan.logo_url);
-      doc.addImage(base64, 14, 3, 32, 20);
-    } catch {
+      const { data, format } = await loadImageAsBase64(facture.artisan.logo_url);
+      console.log("[PDF] addImage format:", format);
+      doc.addImage(data, format, 14, 3, 32, 20);
+      console.log("[PDF] addImage OK");
+    } catch (err) {
+      console.error("[PDF] addImage erreur:", err);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(20);
       doc.setTextColor(255, 255, 255);
