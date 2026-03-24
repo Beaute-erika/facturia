@@ -5,7 +5,7 @@ import { ImageIcon, Upload, X, Loader2 } from "lucide-react";
 import { createBrowserClient } from "@/lib/supabase-client";
 
 const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
-const MAX_SIZE_MB = 2;
+const MAX_SIZE_MB = 5;
 
 interface LogoUploadProps {
   defaultUrl?: string | null;
