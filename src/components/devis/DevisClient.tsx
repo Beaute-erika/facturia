@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Plus,
   Euro,
@@ -80,10 +80,25 @@ export default function DevisClient() {
   const [editingData, setEditingData] = useState<(Partial<Devis> & { _uuid: string }) | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
+  // Correctif 2 : snapshot pour comparer avant PATCH
+  const editingSnapshotRef = useRef<{ objet?: string; status?: string } | null>(null);
+  // Correctif 3 : ref pour revoquer les blob URLs proprement
+  const previewUrlRef = useRef<string | null>(null);
+
   const debouncedEditingData = useDebounce(editingData, 800);
 
+  // Correctif 1+2 : autosave avec comparaison snapshot + gestion d'erreurs + logs
   useEffect(() => {
     if (!debouncedEditingData?._uuid) return;
+    const snap = editingSnapshotRef.current;
+    if (
+      snap &&
+      debouncedEditingData.objet === snap.objet &&
+      debouncedEditingData.status === snap.status
+    ) {
+      console.log("[Autosave] devis no changes, skip PATCH");
+      return;
+    }
     console.log("[Autosave] devis saving...", debouncedEditingData._uuid);
     setSaveStatus("saving");
     fetch(`/api/devis/${debouncedEditingData._uuid}`, {
@@ -91,9 +106,23 @@ export default function DevisClient() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ objet: debouncedEditingData.objet, statut: debouncedEditingData.status }),
     })
-      .then(r => r.ok ? setSaveStatus("saved") : Promise.reject(r))
-      .catch(() => setSaveStatus("error"));
+      .then(r => {
+        if (!r.ok) return Promise.reject(r);
+        console.log("[Autosave] devis saved", debouncedEditingData._uuid);
+        setSaveStatus("saved");
+      })
+      .catch(err => {
+        console.error("[Autosave] devis error", err);
+        setSaveStatus("error");
+        setToast({ msg: "Échec de la sauvegarde automatique — modifications conservées", type: "info" });
+        setTimeout(() => setToast(null), 4000);
+      });
   }, [debouncedEditingData]);
+
+  // Correctif 3 : cleanup preview URL au démontage du composant
+  useEffect(() => {
+    return () => { if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current); };
+  }, []);
 
   // Charge les devis depuis Supabase
   useEffect(() => {
@@ -173,19 +202,27 @@ export default function DevisClient() {
     showToast(`PDF ${d.id} téléchargé`, "info");
   };
 
-  // Ouvrir prévisualisation dans la modale
+  // Ouvrir prévisualisation — correctif 3 : revoke ancien URL avant remplacement
   const handleOpenPreview = async (d: Devis) => {
     console.log("[DevisClient] aperçu clic:", d.id);
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
     setPreviewLoadingId(d.id);
     const blob = await generateDevisPDF(buildDevisDataFromRow(d, artisan));
     const url = URL.createObjectURL(blob);
+    previewUrlRef.current = url;
     setPreviewUrl(url);
     setPreviewTarget(d);
     setPreviewLoadingId(null);
   };
 
   const handleClosePreview = () => {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
     setPreviewUrl(null);
     setPreviewTarget(null);
   };
@@ -455,7 +492,7 @@ export default function DevisClient() {
                             className="input-field text-sm w-full"
                           />
                         ) : (
-                          <span className="truncate block" onDoubleClick={e => { e.stopPropagation(); setEditingId(d.id); setEditingData({ _uuid: d._uuid ?? "", objet: d.objet, status: d.status }); setSaveStatus("idle"); }}>
+                          <span className="truncate block" onDoubleClick={e => { e.stopPropagation(); setEditingId(d.id); editingSnapshotRef.current = { objet: d.objet, status: d.status }; setEditingData({ _uuid: d._uuid ?? "", objet: d.objet, status: d.status }); setSaveStatus("idle"); }}>
                             {d.objet}
                           </span>
                         )}
@@ -486,7 +523,7 @@ export default function DevisClient() {
                             title={isEditing ? "Terminer" : "Modifier"}
                             onClick={() => {
                               if (isEditing) { setEditingId(null); }
-                              else { setEditingId(d.id); setEditingData({ _uuid: d._uuid ?? "", objet: d.objet, status: d.status }); setSaveStatus("idle"); }
+                              else { setEditingId(d.id); editingSnapshotRef.current = { objet: d.objet, status: d.status }; setEditingData({ _uuid: d._uuid ?? "", objet: d.objet, status: d.status }); setSaveStatus("idle"); }
                             }}
                             className={clsx(
                               "p-1.5 rounded-lg transition-colors",

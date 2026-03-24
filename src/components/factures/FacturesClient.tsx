@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Plus,
   AlertTriangle,
@@ -79,10 +79,25 @@ export default function FacturesClient() {
   const [editingData, setEditingData] = useState<(Partial<Facture> & { _uuid: string }) | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
+  // Correctif 2 : snapshot pour comparer avant PATCH
+  const editingSnapshotRef = useRef<{ objet?: string; status?: string } | null>(null);
+  // Correctif 3 : ref pour revoquer les blob URLs proprement
+  const previewUrlRef = useRef<string | null>(null);
+
   const debouncedEditingData = useDebounce(editingData, 800);
 
+  // Correctif 1+2 : autosave avec comparaison snapshot + gestion d'erreurs + logs
   useEffect(() => {
     if (!debouncedEditingData?._uuid) return;
+    const snap = editingSnapshotRef.current;
+    if (
+      snap &&
+      debouncedEditingData.objet === snap.objet &&
+      debouncedEditingData.status === snap.status
+    ) {
+      console.log("[Autosave] facture no changes, skip PATCH");
+      return;
+    }
     console.log("[Autosave] facture saving...", debouncedEditingData._uuid);
     setSaveStatus("saving");
     fetch(`/api/factures/${debouncedEditingData._uuid}`, {
@@ -90,9 +105,23 @@ export default function FacturesClient() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ objet: debouncedEditingData.objet, statut: debouncedEditingData.status }),
     })
-      .then(r => r.ok ? setSaveStatus("saved") : Promise.reject(r))
-      .catch(() => setSaveStatus("error"));
+      .then(r => {
+        if (!r.ok) return Promise.reject(r);
+        console.log("[Autosave] facture saved", debouncedEditingData._uuid);
+        setSaveStatus("saved");
+      })
+      .catch(err => {
+        console.error("[Autosave] facture error", err);
+        setSaveStatus("error");
+        setToast({ msg: "Échec de la sauvegarde automatique — modifications conservées", type: "warning" });
+        setTimeout(() => setToast(null), 4000);
+      });
   }, [debouncedEditingData]);
+
+  // Correctif 3 : cleanup preview URL au démontage du composant
+  useEffect(() => {
+    return () => { if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current); };
+  }, []);
 
   // Charge les factures depuis Supabase
   useEffect(() => {
@@ -111,9 +140,7 @@ export default function FacturesClient() {
         if (!data) return;
         const nom = data.raison_sociale || [data.prenom, data.nom].filter(Boolean).join(" ");
         const adresse = [data.adresse, [data.code_postal, data.ville].filter(Boolean).join(" ")].filter(Boolean).join(", ");
-        const artisanData = { nom, adresse, siret: data.siret || "", email: data.email || user.email || "", tel: data.tel || "", logo_url: data.logo_url ?? null };
-        console.log("[FacturesClient] artisan chargé:", artisanData);
-        setArtisan(artisanData);
+        setArtisan({ nom, adresse, siret: data.siret || "", email: data.email || user.email || "", tel: data.tel || "", logo_url: data.logo_url ?? null });
       });
     }).catch((err) => { console.error("[FacturesClient] fetch artisan profile:", err); });
   }, []);
@@ -136,18 +163,27 @@ export default function FacturesClient() {
     showToast(`PDF ${f.id} téléchargé`, "info");
   };
 
+  // Correctif 3 : revoke ancien URL avant remplacement
   const handleOpenPreview = async (f: Facture) => {
     console.log("[FacturesClient] aperçu clic:", f.id);
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
     setPreviewLoadingId(f.id);
     const blob = await generateFacturePDF(buildFactureDataFromRow(f, artisan));
     const url = URL.createObjectURL(blob);
+    previewUrlRef.current = url;
     setPreviewUrl(url);
     setPreviewTarget(f);
     setPreviewLoadingId(null);
   };
 
   const handleClosePreview = () => {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
     setPreviewUrl(null);
     setPreviewTarget(null);
   };
@@ -467,7 +503,7 @@ export default function FacturesClient() {
                           ) : (
                             <span
                               className="truncate block"
-                              onDoubleClick={e => { e.stopPropagation(); setEditingId(f.id); setEditingData({ _uuid: f._uuid ?? "", objet: f.objet, status: f.status }); setSaveStatus("idle"); }}
+                              onDoubleClick={e => { e.stopPropagation(); setEditingId(f.id); editingSnapshotRef.current = { objet: f.objet, status: f.status }; setEditingData({ _uuid: f._uuid ?? "", objet: f.objet, status: f.status }); setSaveStatus("idle"); }}
                             >
                               {f.objet}
                             </span>
@@ -512,7 +548,7 @@ export default function FacturesClient() {
                               title={isEditing ? "Terminer" : "Modifier"}
                               onClick={() => {
                                 if (isEditing) { setEditingId(null); }
-                                else { setEditingId(f.id); setEditingData({ _uuid: f._uuid ?? "", objet: f.objet, status: f.status }); setSaveStatus("idle"); }
+                                else { setEditingId(f.id); editingSnapshotRef.current = { objet: f.objet, status: f.status }; setEditingData({ _uuid: f._uuid ?? "", objet: f.objet, status: f.status }); setSaveStatus("idle"); }
                               }}
                               className={clsx(
                                 "p-1.5 rounded-lg transition-colors",
