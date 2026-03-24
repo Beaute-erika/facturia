@@ -419,7 +419,11 @@ export default function DevisClient() {
 
                           {/* View */}
                           <button
-                            title="Aperçu"
+                            title="Aperçu PDF"
+                            onClick={() => {
+                              console.log("[DevisClient] aperçu clic:", d.id);
+                              handleDownload(d);
+                            }}
                             className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-active transition-colors"
                           >
                             <Eye className="w-4 h-4" />
