@@ -1,36 +1,34 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, Download, Send, CheckCircle2, Pencil, ZoomIn, ZoomOut } from "lucide-react";
+import { X, Download, Pencil, ZoomIn, ZoomOut } from "lucide-react";
 import Badge from "@/components/ui/Badge";
 
-const STATUS_CONFIG: Record<string, { variant: "success" | "warning" | "error" | "info" | "default"; label: string }> = {
-  payée: { variant: "success", label: "Payée" },
-  envoyée: { variant: "info", label: "Envoyée" },
-  "en retard": { variant: "error", label: "En retard" },
+type DevisStatus = "accepté" | "envoyé" | "en attente" | "brouillon" | "refusé";
+
+const STATUS_CONFIG: Record<DevisStatus, { variant: "success" | "warning" | "error" | "info" | "default"; label: string }> = {
+  accepté: { variant: "success", label: "Accepté" },
+  envoyé: { variant: "info", label: "Envoyé" },
+  "en attente": { variant: "warning", label: "En attente" },
   brouillon: { variant: "default", label: "Brouillon" },
+  refusé: { variant: "error", label: "Refusé" },
 };
 
-interface FactureRow {
+interface DevisRow {
   id: string;
   client: string;
   objet: string;
   montant: string;
-  tva: string;
-  total: string;
   date: string;
-  echeance: string;
-  status: string;
-  chorus: boolean;
+  validite: string;
+  status: DevisStatus;
 }
 
 interface Props {
-  facture: FactureRow;
+  devis: DevisRow;
   pdfUrl: string;
   onClose: () => void;
   onDownload: () => void;
-  onSendEmail: () => void;
-  onMarkPaid: () => void;
   onEdit: () => void;
 }
 
@@ -38,17 +36,9 @@ const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 2.0;
 const ZOOM_STEP = 0.25;
 
-export default function FacturePreviewModal({
-  facture,
-  pdfUrl,
-  onClose,
-  onDownload,
-  onSendEmail,
-  onMarkPaid,
-  onEdit,
-}: Props) {
+export default function DevisPreviewModal({ devis, pdfUrl, onClose, onDownload, onEdit }: Props) {
   const [zoom, setZoom] = useState(1);
-  const sc = STATUS_CONFIG[facture.status] ?? { variant: "default" as const, label: facture.status };
+  const sc = STATUS_CONFIG[devis.status] ?? { variant: "default" as const, label: devis.status };
 
   // ESC pour fermer
   useEffect(() => {
@@ -66,11 +56,10 @@ export default function FacturePreviewModal({
         <div className="flex items-center gap-3 px-5 py-3 border-b border-surface-border flex-shrink-0">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-mono font-bold text-primary">{facture.id}</span>
+              <span className="font-mono font-bold text-primary">{devis.id}</span>
               <Badge variant={sc.variant} size="sm" dot>{sc.label}</Badge>
-              {facture.chorus && <Badge variant="success" size="sm">Chorus Pro</Badge>}
             </div>
-            <p className="text-xs text-text-muted truncate mt-0.5">{facture.client} • {facture.objet}</p>
+            <p className="text-xs text-text-muted truncate mt-0.5">{devis.client} • {devis.objet}</p>
           </div>
 
           {/* Zoom */}
@@ -107,30 +96,12 @@ export default function FacturePreviewModal({
               <Pencil className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Modifier</span>
             </button>
-            {facture.status !== "payée" && (
-              <>
-                <button
-                  onClick={onSendEmail}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-status-info bg-status-info/10 hover:bg-status-info/20 transition-colors"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Envoyer</span>
-                </button>
-                <button
-                  onClick={onMarkPaid}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Payée</span>
-                </button>
-              </>
-            )}
             <button
               onClick={onDownload}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-text-muted hover:text-text-primary hover:bg-surface-active transition-colors border border-surface-border"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
             >
               <Download className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">PDF</span>
+              <span className="hidden sm:inline">Télécharger</span>
             </button>
             <button
               onClick={onClose}
@@ -155,7 +126,7 @@ export default function FacturePreviewModal({
           >
             <iframe
               src={pdfUrl}
-              title={`Aperçu ${facture.id}`}
+              title={`Aperçu ${devis.id}`}
               className="w-full rounded-lg bg-white shadow-card"
               style={{ height: `${zoom * 75}vh`, minHeight: "500px", border: "none" }}
             />

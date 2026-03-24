@@ -73,7 +73,7 @@ async function fitImage(
   return { data, format, width, height };
 }
 
-export async function generateFacturePDF(facture: FactureData): Promise<void> {
+export async function generateFacturePDF(facture: FactureData): Promise<Blob> {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const W = doc.internal.pageSize.getWidth();
 
@@ -324,7 +324,7 @@ export async function generateFacturePDF(facture: FactureData): Promise<void> {
     doc.restoreGraphicsState();
   }
 
-  doc.save(`${facture.id}.pdf`);
+  return doc.output("blob");
 }
 
 const ARTISAN_FALLBACK: FactureData["artisan"] = {

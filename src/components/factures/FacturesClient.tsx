@@ -8,13 +8,14 @@ import {
   Clock,
   Send,
   Download,
-  Eye,
   Search,
   MoreHorizontal,
   Bell,
   Building2,
   Trash2,
   Receipt,
+  Pencil,
+  Check,
 } from "lucide-react";
 import { clsx } from "clsx";
 import Card from "@/components/ui/Card";
@@ -25,11 +26,13 @@ import FacturePreviewModal from "./FacturePreviewModal";
 import NewFactureModal, { type NewFactureResult } from "./NewFactureModal";
 import { generateFacturePDF, buildFactureDataFromRow, type FactureData } from "@/lib/pdf-facture";
 import { createBrowserClient } from "@/lib/supabase-client";
+import { useDebounce } from "@/hooks/useDebounce";
 
 type FactureStatus = "payée" | "envoyée" | "en retard" | "brouillon";
 
 interface Facture {
   id: string;
+  _uuid?: string;
   client: string;
   objet: string;
   montant: string;
@@ -70,6 +73,26 @@ export default function FacturesClient() {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [newFactureOpen, setNewFactureOpen] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "info" | "warning" } | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingData, setEditingData] = useState<(Partial<Facture> & { _uuid: string }) | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  const debouncedEditingData = useDebounce(editingData, 800);
+
+  useEffect(() => {
+    if (!debouncedEditingData?._uuid) return;
+    console.log("[Autosave] facture saving...", debouncedEditingData._uuid);
+    setSaveStatus("saving");
+    fetch(`/api/factures/${debouncedEditingData._uuid}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ objet: debouncedEditingData.objet, statut: debouncedEditingData.status }),
+    })
+      .then(r => r.ok ? setSaveStatus("saved") : Promise.reject(r))
+      .catch(() => setSaveStatus("error"));
+  }, [debouncedEditingData]);
 
   // Charge les factures depuis Supabase
   useEffect(() => {
@@ -102,11 +125,40 @@ export default function FacturesClient() {
 
   const handleDownload = async (f: Facture) => {
     setDownloadingId(f.id);
-    const factureData = buildFactureDataFromRow(f, artisan);
-    console.log("[FacturesClient] factureData.artisan.logo_url:", factureData.artisan.logo_url);
-    await generateFacturePDF(factureData);
+    const blob = await generateFacturePDF(buildFactureDataFromRow(f, artisan));
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${f.id}.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
     setDownloadingId(null);
     showToast(`PDF ${f.id} téléchargé`, "info");
+  };
+
+  const handleOpenPreview = async (f: Facture) => {
+    console.log("[FacturesClient] aperçu clic:", f.id);
+    setPreviewLoadingId(f.id);
+    const blob = await generateFacturePDF(buildFactureDataFromRow(f, artisan));
+    const url = URL.createObjectURL(blob);
+    setPreviewUrl(url);
+    setPreviewTarget(f);
+    setPreviewLoadingId(null);
+  };
+
+  const handleClosePreview = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    setPreviewTarget(null);
+  };
+
+  const updateLocal = (id: string, field: keyof Facture, value: string) => {
+    setFactures(prev => prev.map(f => f.id === id ? { ...f, [field]: value } : f));
+    const target = factures.find(f => f.id === id);
+    if (target?._uuid) {
+      setEditingData(prev => ({ ...prev, _uuid: target._uuid!, [field]: value }));
+      setSaveStatus("idle");
+    }
   };
 
   const handleMarkPaid = (id: string) => {
@@ -190,13 +242,15 @@ export default function FacturesClient() {
           onSent={() => handleSend(emailTarget)}
         />
       )}
-      {previewTarget && (
+      {previewTarget && previewUrl && (
         <FacturePreviewModal
           facture={previewTarget}
-          onClose={() => setPreviewTarget(null)}
+          pdfUrl={previewUrl}
+          onClose={handleClosePreview}
           onDownload={() => handleDownload(previewTarget)}
-          onSendEmail={() => { setPreviewTarget(null); setEmailTarget(previewTarget); }}
-          onMarkPaid={() => handleMarkPaid(previewTarget.id)}
+          onSendEmail={() => { handleClosePreview(); setEmailTarget(previewTarget); }}
+          onMarkPaid={() => { handleMarkPaid(previewTarget.id); handleClosePreview(); }}
+          onEdit={() => setEditingId(previewTarget.id)}
         />
       )}
       {newFactureOpen && (
@@ -384,14 +438,41 @@ export default function FacturesClient() {
                 <tbody>
                   {filtered.map((f) => {
                     const sc = STATUS_CONFIG[f.status];
+                    const isEditing = editingId === f.id;
+                    const isPreviewLoading = previewLoadingId === f.id;
                     return (
                       <tr
                         key={f.id}
-                        className="border-b border-surface-border last:border-0 hover:bg-surface-hover/50 transition-colors group"
+                        onClick={() => !isEditing && handleOpenPreview(f)}
+                        className={clsx(
+                          "border-b border-surface-border last:border-0 transition-colors group",
+                          isEditing ? "bg-primary/5" : "hover:bg-surface-hover/50 cursor-pointer"
+                        )}
                       >
-                        <td className="px-4 py-4 font-mono text-sm text-primary font-semibold">{f.id}</td>
+                        <td className="px-4 py-4 font-mono text-sm text-primary font-semibold">
+                          {isPreviewLoading ? (
+                            <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                          ) : f.id}
+                        </td>
                         <td className="px-4 py-4 text-sm font-medium text-text-primary whitespace-nowrap">{f.client}</td>
-                        <td className="px-4 py-4 text-sm text-text-secondary max-w-[160px] truncate">{f.objet}</td>
+                        <td className="px-4 py-4 text-sm text-text-secondary max-w-[160px]">
+                          {isEditing ? (
+                            <input
+                              autoFocus
+                              value={f.objet}
+                              onClick={e => e.stopPropagation()}
+                              onChange={e => updateLocal(f.id, "objet", e.target.value)}
+                              className="input-field text-sm w-full"
+                            />
+                          ) : (
+                            <span
+                              className="truncate block"
+                              onDoubleClick={e => { e.stopPropagation(); setEditingId(f.id); setEditingData({ _uuid: f._uuid ?? "", objet: f.objet, status: f.status }); setSaveStatus("idle"); }}
+                            >
+                              {f.objet}
+                            </span>
+                          )}
+                        </td>
                         <td className="px-4 py-4 text-sm font-mono text-text-secondary whitespace-nowrap">{f.montant}</td>
                         <td className="px-4 py-4 text-sm font-semibold font-mono text-text-primary whitespace-nowrap">{f.total}</td>
                         <td className="px-4 py-4 text-sm text-text-muted whitespace-nowrap">{f.date}</td>
@@ -402,7 +483,20 @@ export default function FacturesClient() {
                           {f.echeance}
                         </td>
                         <td className="px-4 py-4">
-                          <Badge variant={sc.variant} size="sm" dot>{sc.label}</Badge>
+                          {isEditing ? (
+                            <select
+                              value={f.status}
+                              onClick={e => e.stopPropagation()}
+                              onChange={e => updateLocal(f.id, "status", e.target.value)}
+                              className="input-field text-xs py-1"
+                            >
+                              {(Object.keys(STATUS_CONFIG) as FactureStatus[]).map(s => (
+                                <option key={s} value={s}>{STATUS_CONFIG[s].label}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <Badge variant={sc.variant} size="sm" dot>{sc.label}</Badge>
+                          )}
                         </td>
                         <td className="px-4 py-4">
                           {f.chorus ? (
@@ -412,15 +506,34 @@ export default function FacturesClient() {
                           )}
                         </td>
                         <td className="px-4 py-4">
-                          <div className="flex items-center gap-1">
-                            {/* Preview */}
+                          <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                            {/* Modifier / Terminer */}
                             <button
-                              title="Aperçu"
-                              onClick={() => setPreviewTarget(f)}
-                              className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-active transition-colors"
+                              title={isEditing ? "Terminer" : "Modifier"}
+                              onClick={() => {
+                                if (isEditing) { setEditingId(null); }
+                                else { setEditingId(f.id); setEditingData({ _uuid: f._uuid ?? "", objet: f.objet, status: f.status }); setSaveStatus("idle"); }
+                              }}
+                              className={clsx(
+                                "p-1.5 rounded-lg transition-colors",
+                                isEditing
+                                  ? "text-primary bg-primary/10 hover:bg-primary/20"
+                                  : "text-text-muted hover:text-text-primary hover:bg-surface-active"
+                              )}
                             >
-                              <Eye className="w-4 h-4" />
+                              {isEditing ? <Check className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
                             </button>
+
+                            {/* Save status */}
+                            {isEditing && saveStatus !== "idle" && (
+                              <span className={clsx("text-[10px] font-medium px-1.5 py-0.5 rounded", {
+                                "text-status-info bg-status-info/10": saveStatus === "saving",
+                                "text-primary bg-primary/10": saveStatus === "saved",
+                                "text-status-error bg-status-error/10": saveStatus === "error",
+                              })}>
+                                {saveStatus === "saving" ? "Sauvegarde…" : saveStatus === "saved" ? "Sauvegardé ✓" : "Erreur"}
+                              </span>
+                            )}
 
                             {/* Download PDF */}
                             <button

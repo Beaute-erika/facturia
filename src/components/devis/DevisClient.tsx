@@ -7,7 +7,6 @@ import {
   Clock,
   CheckCircle,
   XCircle,
-  Eye,
   Download,
   Receipt,
   Sparkles,
@@ -16,6 +15,8 @@ import {
   FileCheck,
   Trash2,
   Send,
+  Pencil,
+  Check,
 } from "lucide-react";
 import { clsx } from "clsx";
 import Card from "@/components/ui/Card";
@@ -24,13 +25,16 @@ import Badge from "@/components/ui/Badge";
 import AIGenerateModal, { type GeneratedDevis } from "./AIGenerateModal";
 import ConvertToFactureModal from "./ConvertToFactureModal";
 import NewDevisModal, { type NewDevisResult } from "./NewDevisModal";
+import DevisPreviewModal from "./DevisPreviewModal";
 import { generateDevisPDF, buildDevisDataFromRow, type DevisData } from "@/lib/pdf";
 import { createBrowserClient } from "@/lib/supabase-client";
+import { useDebounce } from "@/hooks/useDebounce";
 
 type DevisStatus = "accepté" | "envoyé" | "en attente" | "brouillon" | "refusé";
 
 interface Devis {
   id: string;
+  _uuid?: string;
   client: string;
   objet: string;
   montant: string;
@@ -69,6 +73,27 @@ export default function DevisClient() {
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "info" } | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<Devis | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingData, setEditingData] = useState<(Partial<Devis> & { _uuid: string }) | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  const debouncedEditingData = useDebounce(editingData, 800);
+
+  useEffect(() => {
+    if (!debouncedEditingData?._uuid) return;
+    console.log("[Autosave] devis saving...", debouncedEditingData._uuid);
+    setSaveStatus("saving");
+    fetch(`/api/devis/${debouncedEditingData._uuid}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ objet: debouncedEditingData.objet, statut: debouncedEditingData.status }),
+    })
+      .then(r => r.ok ? setSaveStatus("saved") : Promise.reject(r))
+      .catch(() => setSaveStatus("error"));
+  }, [debouncedEditingData]);
 
   // Charge les devis depuis Supabase
   useEffect(() => {
@@ -148,19 +173,31 @@ export default function DevisClient() {
     showToast(`PDF ${d.id} téléchargé`, "info");
   };
 
-  // Preview PDF in new tab
-  const handlePreview = async (d: Devis) => {
+  // Ouvrir prévisualisation dans la modale
+  const handleOpenPreview = async (d: Devis) => {
     console.log("[DevisClient] aperçu clic:", d.id);
-    if (!artisan.nom) {
-      showToast("Profil artisan en cours de chargement, réessayez dans un instant", "info");
-      return;
-    }
-    setDownloadingId(d.id);
+    setPreviewLoadingId(d.id);
     const blob = await generateDevisPDF(buildDevisDataFromRow(d, artisan));
     const url = URL.createObjectURL(blob);
-    window.open(url, "_blank");
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
-    setDownloadingId(null);
+    setPreviewUrl(url);
+    setPreviewTarget(d);
+    setPreviewLoadingId(null);
+  };
+
+  const handleClosePreview = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    setPreviewTarget(null);
+  };
+
+  // Inline editing
+  const updateLocal = (id: string, field: keyof Devis, value: string) => {
+    setDevis(prev => prev.map(d => d.id === id ? { ...d, [field]: value } : d));
+    const target = devis.find(d => d.id === id);
+    if (target?._uuid) {
+      setEditingData(prev => ({ ...prev, _uuid: target._uuid!, [field]: value }));
+      setSaveStatus("idle");
+    }
   };
 
   // Delete devis
@@ -212,6 +249,15 @@ export default function DevisClient() {
           devis={convertTarget}
           onClose={() => setConvertTarget(null)}
           onConfirm={handleConvert}
+        />
+      )}
+      {previewTarget && previewUrl && (
+        <DevisPreviewModal
+          devis={previewTarget}
+          pdfUrl={previewUrl}
+          onClose={handleClosePreview}
+          onDownload={() => handleDownload(previewTarget)}
+          onEdit={() => setEditingId(previewTarget.id)}
         />
       )}
 
@@ -382,23 +428,88 @@ export default function DevisClient() {
                 {filtered.map((d) => {
                   const sc = STATUS_CONFIG[d.status];
                   const canConvert = d.status === "accepté" || d.status === "envoyé";
+                  const isEditing = editingId === d.id;
+                  const isPreviewLoading = previewLoadingId === d.id;
                   return (
                     <tr
                       key={d.id}
-                      className="border-b border-surface-border last:border-0 hover:bg-surface-hover/50 transition-colors group"
+                      onClick={() => !isEditing && handleOpenPreview(d)}
+                      className={clsx(
+                        "border-b border-surface-border last:border-0 transition-colors group",
+                        isEditing ? "bg-primary/5" : "hover:bg-surface-hover/50 cursor-pointer"
+                      )}
                     >
-                      <td className="px-5 py-4 font-mono text-sm text-primary font-semibold">{d.id}</td>
+                      <td className="px-5 py-4 font-mono text-sm text-primary font-semibold">
+                        {isPreviewLoading ? (
+                          <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                        ) : d.id}
+                      </td>
                       <td className="px-5 py-4 text-sm font-medium text-text-primary">{d.client}</td>
-                      <td className="px-5 py-4 text-sm text-text-secondary max-w-[200px] truncate">{d.objet}</td>
+                      <td className="px-5 py-4 text-sm text-text-secondary max-w-[200px]">
+                        {isEditing ? (
+                          <input
+                            autoFocus
+                            value={d.objet}
+                            onClick={e => e.stopPropagation()}
+                            onChange={e => updateLocal(d.id, "objet", e.target.value)}
+                            className="input-field text-sm w-full"
+                          />
+                        ) : (
+                          <span className="truncate block" onDoubleClick={e => { e.stopPropagation(); setEditingId(d.id); setEditingData({ _uuid: d._uuid ?? "", objet: d.objet, status: d.status }); setSaveStatus("idle"); }}>
+                            {d.objet}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-5 py-4 text-sm font-semibold font-mono text-text-primary">{d.montant}</td>
                       <td className="px-5 py-4 text-sm text-text-muted">{d.date}</td>
                       <td className="px-5 py-4 text-sm text-text-muted">{d.validite}</td>
                       <td className="px-5 py-4">
-                        <Badge variant={sc.variant} size="sm" dot>{sc.label}</Badge>
+                        {isEditing ? (
+                          <select
+                            value={d.status}
+                            onClick={e => e.stopPropagation()}
+                            onChange={e => updateLocal(d.id, "status", e.target.value)}
+                            className="input-field text-xs py-1"
+                          >
+                            {(Object.keys(STATUS_CONFIG) as DevisStatus[]).map(s => (
+                              <option key={s} value={s}>{STATUS_CONFIG[s].label}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <Badge variant={sc.variant} size="sm" dot>{sc.label}</Badge>
+                        )}
                       </td>
                       <td className="px-5 py-4">
-                        <div className="flex items-center gap-1">
-                          {/* Convert to invoice — primary action */}
+                        <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                          {/* Modifier / Terminer */}
+                          <button
+                            title={isEditing ? "Terminer" : "Modifier"}
+                            onClick={() => {
+                              if (isEditing) { setEditingId(null); }
+                              else { setEditingId(d.id); setEditingData({ _uuid: d._uuid ?? "", objet: d.objet, status: d.status }); setSaveStatus("idle"); }
+                            }}
+                            className={clsx(
+                              "p-1.5 rounded-lg transition-colors",
+                              isEditing
+                                ? "text-primary bg-primary/10 hover:bg-primary/20"
+                                : "text-text-muted hover:text-text-primary hover:bg-surface-active"
+                            )}
+                          >
+                            {isEditing ? <Check className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
+                          </button>
+
+                          {/* Save status */}
+                          {isEditing && saveStatus !== "idle" && (
+                            <span className={clsx("text-[10px] font-medium px-1.5 py-0.5 rounded", {
+                              "text-status-info bg-status-info/10": saveStatus === "saving",
+                              "text-primary bg-primary/10": saveStatus === "saved",
+                              "text-status-error bg-status-error/10": saveStatus === "error",
+                            })}>
+                              {saveStatus === "saving" ? "Sauvegarde…" : saveStatus === "saved" ? "Sauvegardé ✓" : "Erreur"}
+                            </span>
+                          )}
+
+                          {/* Convert */}
                           {canConvert && (
                             <button
                               onClick={() => setConvertTarget(d)}
@@ -437,15 +548,6 @@ export default function DevisClient() {
                               <Send className="w-4 h-4" />
                             </button>
                           )}
-
-                          {/* View */}
-                          <button
-                            title="Aperçu PDF"
-                            onClick={() => handlePreview(d)}
-                            className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-active transition-colors"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
 
                           {/* More menu */}
                           <div className="relative">
