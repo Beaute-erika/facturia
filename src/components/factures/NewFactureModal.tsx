@@ -186,18 +186,15 @@ export default function NewFactureModal({ onClose, onCreated }: Props) {
           numero,
         }),
       });
-      if (!res.ok && res.status !== 404) {
+      if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body?.error || `Erreur serveur (${res.status})`);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Erreur inconnue";
-      // 404 = pas encore de handler POST → création locale uniquement
-      if (!msg.includes("404")) {
-        setSaving(false);
-        setSaveError(msg);
-        return;
-      }
+      setSaving(false);
+      setSaveError(msg);
+      return;
     }
 
     setSaving(false);
