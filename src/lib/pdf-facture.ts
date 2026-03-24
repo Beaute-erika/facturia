@@ -28,6 +28,7 @@ export interface FactureData {
     email: string;
     tel: string;
     tvaNum?: string;
+    logo_url?: string | null;
   };
 }
 
@@ -37,7 +38,18 @@ const GRAY: [number, number, number] = [100, 116, 139];
 const LIGHT: [number, number, number] = [241, 245, 249];
 const RED: [number, number, number] = [239, 68, 68];
 
-export function generateFacturePDF(facture: FactureData): void {
+async function loadImageAsBase64(url: string): Promise<string> {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+export async function generateFacturePDF(facture: FactureData): Promise<void> {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const W = doc.internal.pageSize.getWidth();
 
@@ -45,10 +57,22 @@ export function generateFacturePDF(facture: FactureData): void {
   doc.setFillColor(...GREEN);
   doc.rect(0, 0, W, 28, "F");
 
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(20);
-  doc.setTextColor(255, 255, 255);
-  doc.text("Facturia", 14, 17);
+  if (facture.artisan.logo_url) {
+    try {
+      const base64 = await loadImageAsBase64(facture.artisan.logo_url);
+      doc.addImage(base64, 14, 3, 32, 20);
+    } catch {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(20);
+      doc.setTextColor(255, 255, 255);
+      doc.text("Facturia", 14, 17);
+    }
+  } else {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(20);
+    doc.setTextColor(255, 255, 255);
+    doc.text("Facturia", 14, 17);
+  }
 
   doc.setFontSize(10);
   doc.text("FACTURE", W - 14, 11, { align: "right" });

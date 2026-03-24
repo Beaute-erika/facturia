@@ -23,10 +23,22 @@ export interface DevisData {
     siret: string;
     email: string;
     tel: string;
+    logo_url?: string | null;
   };
 }
 
-export function generateDevisPDF(devis: DevisData): void {
+async function loadImageAsBase64(url: string): Promise<string> {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+export async function generateDevisPDF(devis: DevisData): Promise<void> {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const W = doc.internal.pageSize.getWidth();
 
@@ -40,11 +52,22 @@ export function generateDevisPDF(devis: DevisData): void {
   doc.setFillColor(...GREEN);
   doc.rect(0, 0, W, 28, "F");
 
-  // Logo text
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(20);
-  doc.setTextColor(255, 255, 255);
-  doc.text("Facturia", 14, 17);
+  if (devis.artisan.logo_url) {
+    try {
+      const base64 = await loadImageAsBase64(devis.artisan.logo_url);
+      doc.addImage(base64, 14, 3, 32, 20);
+    } catch {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(20);
+      doc.setTextColor(255, 255, 255);
+      doc.text("Facturia", 14, 17);
+    }
+  } else {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(20);
+    doc.setTextColor(255, 255, 255);
+    doc.text("Facturia", 14, 17);
+  }
 
   // DEVIS label
   doc.setFontSize(10);

@@ -83,11 +83,11 @@ export default function DevisClient() {
     const supabase = createBrowserClient();
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
-      supabase.from("users").select("prenom,nom,raison_sociale,adresse,ville,code_postal,siret,email,tel").eq("id", user.id).single().then(({ data }) => {
+      supabase.from("users").select("prenom,nom,raison_sociale,adresse,ville,code_postal,siret,email,tel,logo_url").eq("id", user.id).single().then(({ data }) => {
         if (!data) return;
         const nom = data.raison_sociale || [data.prenom, data.nom].filter(Boolean).join(" ");
         const adresse = [data.adresse, [data.code_postal, data.ville].filter(Boolean).join(" ")].filter(Boolean).join(", ");
-        setArtisan({ nom, adresse, siret: data.siret || "", email: data.email || user.email || "", tel: data.tel || "" });
+        setArtisan({ nom, adresse, siret: data.siret || "", email: data.email || user.email || "", tel: data.tel || "", logo_url: data.logo_url ?? null });
       });
     }).catch((err) => { console.error("[DevisClient] fetch artisan profile:", err); });
   }, []);
@@ -131,17 +131,15 @@ export default function DevisClient() {
   };
 
   // Download PDF
-  const handleDownload = (d: Devis) => {
+  const handleDownload = async (d: Devis) => {
     if (!artisan.nom) {
       showToast("Profil artisan en cours de chargement, réessayez dans un instant", "info");
       return;
     }
     setDownloadingId(d.id);
-    setTimeout(() => {
-      generateDevisPDF(buildDevisDataFromRow(d, artisan));
-      setDownloadingId(null);
-      showToast(`PDF ${d.id} téléchargé`, "info");
-    }, 300);
+    await generateDevisPDF(buildDevisDataFromRow(d, artisan));
+    setDownloadingId(null);
+    showToast(`PDF ${d.id} téléchargé`, "info");
   };
 
   // Delete devis

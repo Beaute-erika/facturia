@@ -82,11 +82,11 @@ export default function FacturesClient() {
     const supabase = createBrowserClient();
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
-      supabase.from("users").select("prenom,nom,raison_sociale,adresse,ville,code_postal,siret,email,tel").eq("id", user.id).single().then(({ data }) => {
+      supabase.from("users").select("prenom,nom,raison_sociale,adresse,ville,code_postal,siret,email,tel,logo_url").eq("id", user.id).single().then(({ data }) => {
         if (!data) return;
         const nom = data.raison_sociale || [data.prenom, data.nom].filter(Boolean).join(" ");
         const adresse = [data.adresse, [data.code_postal, data.ville].filter(Boolean).join(" ")].filter(Boolean).join(", ");
-        setArtisan({ nom, adresse, siret: data.siret || "", email: data.email || user.email || "", tel: data.tel || "" });
+        setArtisan({ nom, adresse, siret: data.siret || "", email: data.email || user.email || "", tel: data.tel || "", logo_url: data.logo_url ?? null });
       });
     }).catch((err) => { console.error("[FacturesClient] fetch artisan profile:", err); });
   }, []);
@@ -96,13 +96,11 @@ export default function FacturesClient() {
     setTimeout(() => setToast(null), 3200);
   };
 
-  const handleDownload = (f: Facture) => {
+  const handleDownload = async (f: Facture) => {
     setDownloadingId(f.id);
-    setTimeout(() => {
-      generateFacturePDF(buildFactureDataFromRow(f, artisan));
-      setDownloadingId(null);
-      showToast(`PDF ${f.id} téléchargé`, "info");
-    }, 300);
+    await generateFacturePDF(buildFactureDataFromRow(f, artisan));
+    setDownloadingId(null);
+    showToast(`PDF ${f.id} téléchargé`, "info");
   };
 
   const handleMarkPaid = (id: string) => {
