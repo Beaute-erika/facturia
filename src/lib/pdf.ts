@@ -16,6 +16,9 @@ export interface DevisData {
     prixUnitaire: number;
     tva: number;
   }[];
+  remisePercent?: number;
+  acompte?: number;
+  conditionsPaiement?: string;
   notes?: string;
   artisan: {
     nom: string;
@@ -199,20 +202,35 @@ export async function generateDevisPDF(devis: DevisData): Promise<Blob> {
   });
 
   // ── Totals
-  const totalHT = devis.lignes.reduce((s, l) => s + l.quantite * l.prixUnitaire, 0);
-  const totalTVA = devis.lignes.reduce((s, l) => s + l.quantite * l.prixUnitaire * (l.tva / 100), 0);
-  const totalTTC = totalHT + totalTVA;
+  const remisePercent = devis.remisePercent ?? 0;
+  const acompte       = devis.acompte ?? 0;
+  const htBrut  = devis.lignes.reduce((s, l) => s + l.quantite * l.prixUnitaire, 0);
+  const remise  = htBrut * (remisePercent / 100);
+  const htNet   = htBrut - remise;
+  const df      = 1 - remisePercent / 100;
+  const totalTVA = devis.lignes.reduce((s, l) => s + l.quantite * l.prixUnitaire * df * (l.tva / 100), 0);
+  const totalTTC = htNet + totalTVA;
+  const restant  = Math.max(0, totalTTC - acompte);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const finalY = (doc as any).lastAutoTable.finalY + 6;
-  const txW = 80;
+  const txW = 90;
   const txX = W - 14 - txW;
 
-  const totals = [
-    { label: "Total HT", value: `${totalHT.toLocaleString("fr-FR")} €`, bold: false },
-    { label: "TVA", value: `${totalTVA.toLocaleString("fr-FR")} €`, bold: false },
-    { label: "Total TTC", value: `${totalTTC.toLocaleString("fr-FR")} €`, bold: true },
+  type TotalRow = { label: string; value: string; bold: boolean; warning?: boolean };
+  const totals: TotalRow[] = [
+    { label: "Total HT brut", value: `${htBrut.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} €`, bold: false },
   ];
+  if (remisePercent > 0) {
+    totals.push({ label: `Remise (${remisePercent}%)`, value: `−${remise.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} €`, bold: false, warning: true });
+    totals.push({ label: "Total HT net", value: `${htNet.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} €`, bold: false });
+  }
+  totals.push({ label: "TVA", value: `${totalTVA.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} €`, bold: false });
+  totals.push({ label: "Total TTC", value: `${totalTTC.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} €`, bold: true });
+  if (acompte > 0) {
+    totals.push({ label: "Acompte versé", value: `−${acompte.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} €`, bold: false });
+    totals.push({ label: "RESTE À PAYER", value: `${restant.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} €`, bold: true });
+  }
 
   totals.forEach((t, i) => {
     const y = finalY + i * 8;
@@ -220,6 +238,8 @@ export async function generateDevisPDF(devis: DevisData): Promise<Blob> {
       doc.setFillColor(...GREEN);
       doc.roundedRect(txX - 2, y - 5, txW + 2, 9, 1, 1, "F");
       doc.setTextColor(255, 255, 255);
+    } else if (t.warning) {
+      doc.setTextColor(234, 88, 12); // orange
     } else {
       doc.setTextColor(...GRAY);
     }
@@ -229,13 +249,24 @@ export async function generateDevisPDF(devis: DevisData): Promise<Blob> {
     doc.text(t.value, W - 16, y, { align: "right" });
   });
 
-  // ── Notes
-  if (devis.notes) {
-    const notesY = finalY + totals.length * 8 + 10;
+  // ── Conditions de paiement + Notes
+  let notesY = finalY + totals.length * 8 + 10;
+  if (devis.conditionsPaiement) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8);
     doc.setTextColor(...GRAY);
-    doc.text("CONDITIONS & NOTES", 14, notesY);
+    doc.text("CONDITIONS DE PAIEMENT", 14, notesY);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(...DARK);
+    doc.text(devis.conditionsPaiement, 14, notesY + 5, { maxWidth: W - 28 });
+    notesY += 5 + doc.splitTextToSize(devis.conditionsPaiement, W - 28).length * 5 + 6;
+  }
+  if (devis.notes) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(...GRAY);
+    doc.text("NOTES", 14, notesY);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     doc.setTextColor(...DARK);

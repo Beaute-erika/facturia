@@ -24,7 +24,32 @@ export async function POST(req: Request) {
     if (!user) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
 
     const body = await req.json();
-    const { client_nom, client_email, client_id, client_type, objet, date_emission, date_echeance, lignes, montant_ht, montant_tva, montant_ttc, notes, numero } = body;
+    const {
+      client_nom, client_email, client_id, client_type,
+      objet, date_emission, date_echeance, lignes, notes, numero,
+      conditions_paiement,
+      remise_percent: remisePercentRaw,
+      acompte: acompteRaw,
+    } = body;
+
+    // Calcul côté serveur
+    const remisePercent = Math.min(100, Math.max(0, Number(remisePercentRaw ?? 0)));
+    const acompte = Math.max(0, Number(acompteRaw ?? 0));
+    const htBrut = (lignes ?? []).reduce(
+      (s: number, l: { quantite: number; prix_unitaire: number }) =>
+        s + Number(l.quantite) * Number(l.prix_unitaire),
+      0,
+    );
+    const remise = htBrut * (remisePercent / 100);
+    const htNet  = htBrut - remise;
+    const df     = 1 - remisePercent / 100;
+    const montant_tva = (lignes ?? []).reduce(
+      (s: number, l: { quantite: number; prix_unitaire: number; tva: number }) =>
+        s + Number(l.quantite) * Number(l.prix_unitaire) * df * (Number(l.tva) / 100),
+      0,
+    );
+    const montant_ht  = htNet;
+    const montant_ttc = htNet + montant_tva;
 
     if (!client_nom || !objet || !numero) {
       return NextResponse.json({ error: "Champs requis manquants (client_nom, objet, numero)" }, { status: 400 });
@@ -62,7 +87,7 @@ export async function POST(req: Request) {
     }
 
     const tvaRate = lignes?.length
-      ? lignes.reduce((sum: number, l: { tva: number; total_ht: number }) => sum + l.tva * l.total_ht, 0) / (montant_ht || 1)
+      ? lignes.reduce((sum: number, l: { tva: number; total_ht: number }) => sum + l.tva * l.total_ht, 0) / (htNet || 1)
       : 10;
 
     const { data, error } = await supabase
@@ -76,10 +101,13 @@ export async function POST(req: Request) {
         date_echeance: date_echeance ?? null,
         lignes: lignes ?? [],
         tva_rate: Math.round(tvaRate * 100) / 100,
-        montant_ht: montant_ht ?? 0,
-        montant_tva: montant_tva ?? 0,
-        montant_ttc: montant_ttc ?? 0,
+        montant_ht,
+        montant_tva,
+        montant_ttc,
         notes: notes ?? null,
+        conditions_paiement: conditions_paiement ?? null,
+        remise_percent: remisePercent,
+        acompte,
         statut: "brouillon",
       })
       .select("*, clients(nom, prenom, raison_sociale)")
@@ -142,6 +170,9 @@ export async function GET() {
         echeance: formatDate(row.date_echeance),
         status: STATUT_MAP[row.statut] ?? "brouillon",
         chorus: row.chorus_pro ?? false,
+        chorus_status: (row as unknown as { chorus_status?: string | null }).chorus_status ?? null,
+        chorus_last_error: (row as unknown as { chorus_last_error?: string | null }).chorus_last_error ?? null,
+        chorus_retry_count: (row as unknown as { chorus_retry_count?: number }).chorus_retry_count ?? 0,
         _uuid: row.id,
       };
     });

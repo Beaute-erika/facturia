@@ -22,6 +22,8 @@ import { clsx } from "clsx";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
+import { SaveStatusBadge } from "@/components/ui/SaveStatusBadge";
+import EditDevisModal, { type EditDevisResult } from "./EditDevisModal";
 import AIGenerateModal, { type GeneratedDevis } from "./AIGenerateModal";
 import ConvertToFactureModal from "./ConvertToFactureModal";
 import NewDevisModal, { type NewDevisResult } from "./NewDevisModal";
@@ -29,6 +31,9 @@ import DevisPreviewModal from "./DevisPreviewModal";
 import { generateDevisPDF, buildDevisDataFromRow, type DevisData } from "@/lib/pdf";
 import { createBrowserClient } from "@/lib/supabase-client";
 import { useDebounce } from "@/hooks/useDebounce";
+import { useAutosave } from "@/hooks/useAutosave";
+import { useHistory } from "@/hooks/useHistory";
+import { useOfflineSave } from "@/hooks/useOfflineSave";
 
 type DevisStatus = "accepté" | "envoyé" | "en attente" | "brouillon" | "refusé";
 
@@ -43,6 +48,7 @@ interface Devis {
   status: DevisStatus;
 }
 
+type EditingState = { _uuid: string; objet: string; status: DevisStatus };
 
 const STATUS_CONFIG: Record<DevisStatus, { variant: "success" | "warning" | "error" | "info" | "default"; label: string }> = {
   accepté: { variant: "success", label: "Accepté" },
@@ -71,55 +77,105 @@ export default function DevisClient() {
   const [newDevisOpen, setNewDevisOpen] = useState(false);
   const [convertTarget, setConvertTarget] = useState<Devis | null>(null);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ msg: string; type: "success" | "info" } | null>(null);
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "info" | "warning" } | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [previewTarget, setPreviewTarget] = useState<Devis | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingData, setEditingData] = useState<(Partial<Devis> & { _uuid: string }) | null>(null);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [editingData, setEditingData] = useState<EditingState | null>(null);
+  const [showRestoreBanner, setShowRestoreBanner] = useState(false);
+  const [pendingDraft, setPendingDraft] = useState<EditingState | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+  const [editModalTarget, setEditModalTarget] = useState<{ uuid: string; numero: string } | null>(null);
 
-  // Correctif 2 : snapshot pour comparer avant PATCH
-  const editingSnapshotRef = useRef<{ objet?: string; status?: string } | null>(null);
-  // Correctif 3 : ref pour revoquer les blob URLs proprement
+  // Snapshot ref — type élargi pour compatibilité avec useAutosave
+  const editingSnapshotRef = useRef<Record<string, unknown> | null>(null);
+  // Ref pour revoquer les blob URLs proprement
   const previewUrlRef = useRef<string | null>(null);
 
-  const debouncedEditingData = useDebounce(editingData, 800);
+  // ─── Hooks premium ─────────────────────────────────────────────────────────
 
-  // Correctif 1+2 : autosave avec comparaison snapshot + gestion d'erreurs + logs
+  const history = useHistory<EditingState>({ maxStack: 20 });
+
+  const currentEditingUuid = editingId
+    ? devis.find((d) => d.id === editingId)?._uuid ?? null
+    : null;
+  const offlineKey = currentEditingUuid ? `devis:${currentEditingUuid}` : null;
+
+  const { getDraft, clearDraft } = useOfflineSave<EditingState>({
+    storageKey: offlineKey,
+    data: editingData,
+  });
+
+  const debouncedEditingData = useDebounce(
+    editingData as ({ _uuid: string } & Record<string, unknown>) | null,
+    800,
+  );
+
+  const { status: saveStatus, reset: resetSave, isOnline } = useAutosave({
+    data: debouncedEditingData,
+    snapshotRef: editingSnapshotRef,
+    compareKeys: ["objet", "status"],
+    buildUrl: (uuid) => `/api/devis/${uuid}`,
+    buildPayload: (d) => ({ objet: d.objet, statut: d.status }),
+    onError: (msg) => showToast(msg, "warning"),
+    onSaved: () => { if (offlineKey) clearDraft(offlineKey); },
+  });
+
+  // Dirty state : données locales différentes du snapshot
+  const isDirty =
+    editingId != null &&
+    editingData != null &&
+    editingSnapshotRef.current != null &&
+    (editingData.objet !== editingSnapshotRef.current.objet ||
+      editingData.status !== editingSnapshotRef.current.status);
+
+  // ─── Détection mobile ───────────────────────────────────────────────────────
   useEffect(() => {
-    if (!debouncedEditingData?._uuid) return;
-    const snap = editingSnapshotRef.current;
-    if (
-      snap &&
-      debouncedEditingData.objet === snap.objet &&
-      debouncedEditingData.status === snap.status
-    ) {
-      console.log("[Autosave] devis no changes, skip PATCH");
-      return;
-    }
-    console.log("[Autosave] devis saving...", debouncedEditingData._uuid);
-    setSaveStatus("saving");
-    fetch(`/api/devis/${debouncedEditingData._uuid}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ objet: debouncedEditingData.objet, statut: debouncedEditingData.status }),
-    })
-      .then(r => {
-        if (!r.ok) return Promise.reject(r);
-        console.log("[Autosave] devis saved", debouncedEditingData._uuid);
-        setSaveStatus("saved");
-      })
-      .catch(err => {
-        console.error("[Autosave] devis error", err);
-        setSaveStatus("error");
-        setToast({ msg: "Échec de la sauvegarde automatique — modifications conservées", type: "info" });
-        setTimeout(() => setToast(null), 4000);
-      });
-  }, [debouncedEditingData]);
+    setIsMobile(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent));
+  }, []);
 
-  // Correctif 3 : cleanup preview URL au démontage du composant
+  // ─── Protection navigation ──────────────────────────────────────────────────
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) { e.preventDefault(); e.returnValue = ""; }
+    };
+    // pagehide = plus fiable sur mobile/iOS que beforeunload
+    const handlePageHide = () => {
+      if (isDirty) {
+        console.log("[DevisClient] pagehide avec modifications — préservées dans localStorage");
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("pagehide", handlePageHide);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("pagehide", handlePageHide);
+    };
+  }, [isDirty]);
+
+  // ─── Raccourcis clavier Undo / Redo ─────────────────────────────────────────
+  useEffect(() => {
+    if (!editingId) return;
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key !== "z") return;
+      e.preventDefault();
+      const next = e.shiftKey ? history.redo() : history.undo();
+      if (!next) return;
+      setEditingData(next);
+      setDevis((prev) =>
+        prev.map((d) =>
+          d.id === editingId ? { ...d, objet: next.objet, status: next.status } : d,
+        ),
+      );
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingId]);
+
+  // ─── Cleanup preview URL au démontage ───────────────────────────────────────
   useEffect(() => {
     return () => { if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current); };
   }, []);
@@ -137,28 +193,74 @@ export default function DevisClient() {
     const supabase = createBrowserClient();
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
-      supabase.from("users").select("prenom,nom,raison_sociale,adresse,ville,code_postal,siret,email,tel,logo_url").eq("id", user.id).single().then(({ data }) => {
-        if (!data) return;
-        const nom = data.raison_sociale || [data.prenom, data.nom].filter(Boolean).join(" ");
-        const adresse = [data.adresse, [data.code_postal, data.ville].filter(Boolean).join(" ")].filter(Boolean).join(", ");
-        setArtisan({ nom, adresse, siret: data.siret || "", email: data.email || user.email || "", tel: data.tel || "", logo_url: data.logo_url ?? null });
-      });
+      supabase
+        .from("users")
+        .select("prenom,nom,raison_sociale,adresse,ville,code_postal,siret,email,tel,logo_url")
+        .eq("id", user.id)
+        .single()
+        .then(({ data }) => {
+          if (!data) return;
+          const nom = data.raison_sociale || [data.prenom, data.nom].filter(Boolean).join(" ");
+          const adresse = [data.adresse, [data.code_postal, data.ville].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+          setArtisan({ nom, adresse, siret: data.siret || "", email: data.email || user.email || "", tel: data.tel || "", logo_url: data.logo_url ?? null });
+        });
     }).catch((err) => { console.error("[DevisClient] fetch artisan profile:", err); });
   }, []);
 
-  const showToast = (msg: string, type: "success" | "info" = "success") => {
+  // ─── Helpers ────────────────────────────────────────────────────────────────
+
+  const showToast = (msg: string, type: "success" | "info" | "warning" = "success") => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
   };
 
-  // Add manually-created devis
+  /** Entre en mode édition et vérifie si un brouillon local existe. */
+  const startEdit = (d: Devis) => {
+    setEditingId(d.id);
+    editingSnapshotRef.current = { objet: d.objet, status: d.status };
+    const initial: EditingState = { _uuid: d._uuid ?? "", objet: d.objet, status: d.status };
+    setEditingData(initial);
+    history.reset(initial);
+    resetSave();
+
+    // Vérifier un brouillon non sauvegardé
+    if (d._uuid) {
+      const draft = getDraft<EditingState>(`devis:${d._uuid}`);
+      if (draft && (draft.objet !== d.objet || draft.status !== d.status)) {
+        setPendingDraft(draft);
+        setShowRestoreBanner(true);
+      }
+    }
+  };
+
+  const handleRestoreDraft = () => {
+    if (!pendingDraft || !editingId) return;
+    setEditingData(pendingDraft);
+    history.reset(pendingDraft);
+    setDevis((prev) =>
+      prev.map((d) =>
+        d.id === editingId ? { ...d, objet: pendingDraft.objet, status: pendingDraft.status } : d,
+      ),
+    );
+    setShowRestoreBanner(false);
+    setPendingDraft(null);
+    showToast("Modifications restaurées", "info");
+  };
+
+  const handleDiscardDraft = () => {
+    if (offlineKey) clearDraft(offlineKey);
+    setShowRestoreBanner(false);
+    setPendingDraft(null);
+  };
+
+  // ─── Handlers existants ─────────────────────────────────────────────────────
+
   const handleNewDevis = (result: NewDevisResult) => {
     setDevis([result, ...devis]);
     setNewDevisOpen(false);
     showToast(`Devis ${result.id} créé`);
   };
 
-  // Add AI-generated devis
   const handleGenerated = (generated: GeneratedDevis) => {
     const newDevis: Devis = {
       id: generated.id,
@@ -174,17 +276,15 @@ export default function DevisClient() {
     showToast(`Devis ${generated.id} créé par l'IA`);
   };
 
-  // Convert devis → facture
   const handleConvert = (factureId: string) => {
     if (!convertTarget) return;
     setDevis(devis.map((d) =>
-      d.id === convertTarget.id ? { ...d, status: "accepté" } : d
+      d.id === convertTarget.id ? { ...d, status: "accepté" } : d,
     ));
     setConvertTarget(null);
     showToast(`Facture ${factureId} créée avec succès`);
   };
 
-  // Download PDF
   const handleDownload = async (d: Devis) => {
     if (!artisan.nom) {
       showToast("Profil artisan en cours de chargement, réessayez dans un instant", "info");
@@ -202,7 +302,6 @@ export default function DevisClient() {
     showToast(`PDF ${d.id} téléchargé`, "info");
   };
 
-  // Ouvrir prévisualisation — correctif 3 : revoke ancien URL avant remplacement
   const handleOpenPreview = async (d: Devis) => {
     console.log("[DevisClient] aperçu clic:", d.id);
     if (previewUrlRef.current) {
@@ -227,17 +326,29 @@ export default function DevisClient() {
     setPreviewTarget(null);
   };
 
-  // Inline editing
+  /** Met à jour un champ en local + pousse dans l'historique undo/redo. */
   const updateLocal = (id: string, field: keyof Devis, value: string) => {
-    setDevis(prev => prev.map(d => d.id === id ? { ...d, [field]: value } : d));
-    const target = devis.find(d => d.id === id);
-    if (target?._uuid) {
-      setEditingData(prev => ({ ...prev, _uuid: target._uuid!, [field]: value }));
-      setSaveStatus("idle");
+    setDevis((prev) => prev.map((d) => d.id === id ? { ...d, [field]: value } : d));
+    if (editingData) {
+      const next: EditingState = { ...editingData, [field]: value } as EditingState;
+      setEditingData(next);
+      history.push(next);
     }
   };
 
-  // Delete devis
+  /** Applique les modifications complètes d'un devis après EditDevisModal */
+  const handleEditSaved = (result: EditDevisResult) => {
+    setDevis((prev) =>
+      prev.map((d) =>
+        d.id === result.id
+          ? { ...d, client: result.client, objet: result.objet, montant: result.montant, date: result.date, validite: result.validite, status: result.status }
+          : d,
+      ),
+    );
+    setEditModalTarget(null);
+    showToast("Devis mis à jour ✓");
+  };
+
   const handleDelete = (id: string) => {
     setDevis(devis.filter((d) => d.id !== id));
     setMenuOpen(null);
@@ -259,19 +370,66 @@ export default function DevisClient() {
     .filter((d) => d.status !== "refusé")
     .reduce((s, d) => s + (parseFloat(d.montant.replace(/[^0-9]/g, "")) || 0), 0);
 
+  const toastColors = {
+    success: "bg-primary/10 border-primary/30 text-primary",
+    info: "bg-status-info/10 border-status-info/30 text-status-info",
+    warning: "bg-status-warning/10 border-status-warning/30 text-status-warning",
+  };
+
   return (
     <>
       {/* Toast */}
       {toast && (
         <div className={clsx(
           "fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-card border animate-fade-in",
-          toast.type === "success"
-            ? "bg-primary/10 border-primary/30 text-primary"
-            : "bg-status-info/10 border-status-info/30 text-status-info"
+          toastColors[toast.type],
         )}>
           <CheckCircle className="w-4 h-4 flex-shrink-0" />
           <span className="text-sm font-medium">{toast.msg}</span>
         </div>
+      )}
+
+      {/* Bannière restauration brouillon */}
+      {showRestoreBanner && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-3 bg-surface border border-surface-border rounded-xl shadow-card animate-fade-in max-w-sm w-[calc(100%-2rem)]">
+          <span className="text-sm text-text-primary flex-1">Modifications non sauvegardées trouvées</span>
+          <button
+            onClick={handleRestoreDraft}
+            className="px-2.5 py-1 rounded-lg bg-primary text-background text-xs font-semibold flex-shrink-0"
+          >
+            Restaurer
+          </button>
+          <button
+            onClick={handleDiscardDraft}
+            className="px-2.5 py-1 rounded-lg bg-surface-active text-text-muted text-xs font-semibold flex-shrink-0"
+          >
+            Ignorer
+          </button>
+        </div>
+      )}
+
+      {/* Bannière mobile — isDirty sans beforeunload fiable */}
+      {isDirty && isMobile && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-status-warning px-4 py-2 text-xs text-white font-medium text-center">
+          Modifications non sauvegardées — ne quittez pas la page
+        </div>
+      )}
+
+      {/* Bandeau hors ligne */}
+      {!isOnline && editingId && (
+        <div className="fixed top-0 left-0 right-0 z-40 bg-status-warning/90 px-4 py-2 text-xs text-white font-medium text-center">
+          Hors ligne — vos modifications sont préservées localement
+        </div>
+      )}
+
+      {/* Modale édition complète */}
+      {editModalTarget && (
+        <EditDevisModal
+          devisUuid={editModalTarget.uuid}
+          devisNumero={editModalTarget.numero}
+          onClose={() => setEditModalTarget(null)}
+          onSaved={handleEditSaved}
+        />
       )}
 
       {/* Modals */}
@@ -435,7 +593,7 @@ export default function DevisClient() {
                     "px-3 py-1 rounded-lg text-xs font-medium transition-colors",
                     filter === f
                       ? "bg-primary/10 text-primary"
-                      : "text-text-muted hover:text-text-primary hover:bg-surface-hover"
+                      : "text-text-muted hover:text-text-primary hover:bg-surface-hover",
                   )}
                 >
                   {f}
@@ -473,7 +631,7 @@ export default function DevisClient() {
                       onClick={() => !isEditing && handleOpenPreview(d)}
                       className={clsx(
                         "border-b border-surface-border last:border-0 transition-colors group",
-                        isEditing ? "bg-primary/5" : "hover:bg-surface-hover/50 cursor-pointer"
+                        isEditing ? "bg-primary/5" : "hover:bg-surface-hover/50 cursor-pointer",
                       )}
                     >
                       <td className="px-5 py-4 font-mono text-sm text-primary font-semibold">
@@ -487,12 +645,15 @@ export default function DevisClient() {
                           <input
                             autoFocus
                             value={d.objet}
-                            onClick={e => e.stopPropagation()}
-                            onChange={e => updateLocal(d.id, "objet", e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => updateLocal(d.id, "objet", e.target.value)}
                             className="input-field text-sm w-full"
                           />
                         ) : (
-                          <span className="truncate block" onDoubleClick={e => { e.stopPropagation(); setEditingId(d.id); editingSnapshotRef.current = { objet: d.objet, status: d.status }; setEditingData({ _uuid: d._uuid ?? "", objet: d.objet, status: d.status }); setSaveStatus("idle"); }}>
+                          <span
+                            className="truncate block"
+                            onDoubleClick={(e) => { e.stopPropagation(); startEdit(d); }}
+                          >
                             {d.objet}
                           </span>
                         )}
@@ -504,11 +665,11 @@ export default function DevisClient() {
                         {isEditing ? (
                           <select
                             value={d.status}
-                            onClick={e => e.stopPropagation()}
-                            onChange={e => updateLocal(d.id, "status", e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => updateLocal(d.id, "status", e.target.value)}
                             className="input-field text-xs py-1"
                           >
-                            {(Object.keys(STATUS_CONFIG) as DevisStatus[]).map(s => (
+                            {(Object.keys(STATUS_CONFIG) as DevisStatus[]).map((s) => (
                               <option key={s} value={s}>{STATUS_CONFIG[s].label}</option>
                             ))}
                           </select>
@@ -517,34 +678,35 @@ export default function DevisClient() {
                         )}
                       </td>
                       <td className="px-5 py-4">
-                        <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                          {/* Modifier / Terminer */}
-                          <button
-                            title={isEditing ? "Terminer" : "Modifier"}
-                            onClick={() => {
-                              if (isEditing) { setEditingId(null); }
-                              else { setEditingId(d.id); editingSnapshotRef.current = { objet: d.objet, status: d.status }; setEditingData({ _uuid: d._uuid ?? "", objet: d.objet, status: d.status }); setSaveStatus("idle"); }
-                            }}
-                            className={clsx(
-                              "p-1.5 rounded-lg transition-colors",
-                              isEditing
-                                ? "text-primary bg-primary/10 hover:bg-primary/20"
-                                : "text-text-muted hover:text-text-primary hover:bg-surface-active"
-                            )}
-                          >
-                            {isEditing ? <Check className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
-                          </button>
-
-                          {/* Save status */}
-                          {isEditing && saveStatus !== "idle" && (
-                            <span className={clsx("text-[10px] font-medium px-1.5 py-0.5 rounded", {
-                              "text-status-info bg-status-info/10": saveStatus === "saving",
-                              "text-primary bg-primary/10": saveStatus === "saved",
-                              "text-status-error bg-status-error/10": saveStatus === "error",
-                            })}>
-                              {saveStatus === "saving" ? "Sauvegarde…" : saveStatus === "saved" ? "Sauvegardé ✓" : "Erreur"}
-                            </span>
+                        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                          {/* Terminer l'inline editing (si actif) */}
+                          {isEditing && (
+                            <button
+                              title="Terminer"
+                              onClick={() => setEditingId(null)}
+                              className="p-1.5 rounded-lg transition-colors text-primary bg-primary/10 hover:bg-primary/20"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
                           )}
+
+                          {/* Modifier (ouvre la modale complète) */}
+                          {!isEditing && d._uuid && (
+                            <button
+                              title="Modifier le devis complet"
+                              onClick={() => setEditModalTarget({ uuid: d._uuid!, numero: d.id })}
+                              className="p-1.5 rounded-lg transition-colors text-text-muted hover:text-text-primary hover:bg-surface-active"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          )}
+
+                          {/* Badge d'état de sauvegarde */}
+                          <SaveStatusBadge
+                            status={saveStatus}
+                            isDirty={isDirty}
+                            isEditing={isEditing}
+                          />
 
                           {/* Convert */}
                           {canConvert && (

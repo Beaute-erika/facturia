@@ -17,6 +17,9 @@ export interface FactureData {
     prixUnitaire: number;
     tva: number;
   }[];
+  remisePercent?: number;
+  acompte?: number;
+  conditionsPaiement?: string;
   modePaiement?: string;
   iban?: string;
   notes?: string;
@@ -205,23 +208,38 @@ export async function generateFacturePDF(facture: FactureData): Promise<Blob> {
   });
 
   // ── Totals
-  const totalHT = facture.lignes.reduce((s, l) => s + l.quantite * l.prixUnitaire, 0);
+  const remisePercent = facture.remisePercent ?? 0;
+  const acompte       = facture.acompte ?? 0;
+  const htBrut  = facture.lignes.reduce((s, l) => s + l.quantite * l.prixUnitaire, 0);
+  const remise  = htBrut * (remisePercent / 100);
+  const htNet   = htBrut - remise;
+  const df      = 1 - remisePercent / 100;
   const totalTVA = facture.lignes.reduce(
-    (s, l) => s + l.quantite * l.prixUnitaire * (l.tva / 100),
+    (s, l) => s + l.quantite * l.prixUnitaire * df * (l.tva / 100),
     0
   );
-  const totalTTC = totalHT + totalTVA;
+  const totalTTC = htNet + totalTVA;
+  const restant  = Math.max(0, totalTTC - acompte);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const finalY = (doc as any).lastAutoTable.finalY + 6;
-  const txW = 80;
+  const txW = 90;
   const txX = W - 14 - txW;
 
-  const totals = [
-    { label: "Total HT", value: `${totalHT.toLocaleString("fr-FR")} €`, bold: false, accent: false },
-    { label: `TVA (détail ci-dessus)`, value: `${totalTVA.toLocaleString("fr-FR")} €`, bold: false, accent: false },
-    { label: "NET À PAYER TTC", value: `${totalTTC.toLocaleString("fr-FR")} €`, bold: true, accent: true },
+  type TotalRow = { label: string; value: string; bold: boolean; accent: boolean; warning?: boolean };
+  const totals: TotalRow[] = [
+    { label: "Total HT brut", value: `${htBrut.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} €`, bold: false, accent: false },
   ];
+  if (remisePercent > 0) {
+    totals.push({ label: `Remise (${remisePercent}%)`, value: `−${remise.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} €`, bold: false, accent: false, warning: true });
+    totals.push({ label: "Total HT net", value: `${htNet.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} €`, bold: false, accent: false });
+  }
+  totals.push({ label: "TVA (détail ci-dessus)", value: `${totalTVA.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} €`, bold: false, accent: false });
+  totals.push({ label: "NET À PAYER TTC", value: `${totalTTC.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} €`, bold: true, accent: true });
+  if (acompte > 0) {
+    totals.push({ label: "Acompte versé", value: `−${acompte.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} €`, bold: false, accent: false });
+    totals.push({ label: "RESTE À PAYER", value: `${restant.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} €`, bold: true, accent: true });
+  }
 
   totals.forEach((t, i) => {
     const y = finalY + i * 9;
@@ -231,6 +249,10 @@ export async function generateFacturePDF(facture: FactureData): Promise<Blob> {
       doc.setTextColor(255, 255, 255);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(10);
+    } else if (t.warning) {
+      doc.setTextColor(234, 88, 12); // orange
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
     } else {
       doc.setTextColor(...GRAY);
       doc.setFont("helvetica", "normal");
@@ -242,8 +264,14 @@ export async function generateFacturePDF(facture: FactureData): Promise<Blob> {
 
   // ── Payment info
   const payY = finalY + totals.length * 9 + 12;
+
+  // Conditions de paiement block (left side)
+  const condText = facture.conditionsPaiement
+    || `Mode : ${facture.modePaiement || "Virement bancaire"}`;
+  const condLines = doc.splitTextToSize(condText, (W - 28) * 0.55 - 8);
+  const condBlockH = Math.max(26, 10 + condLines.length * 5);
   doc.setFillColor(248, 250, 252);
-  doc.roundedRect(14, payY - 4, (W - 28) * 0.55, 26, 2, 2, "F");
+  doc.roundedRect(14, payY - 4, (W - 28) * 0.55, condBlockH, 2, 2, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
   doc.setTextColor(...GRAY);
@@ -251,20 +279,17 @@ export async function generateFacturePDF(facture: FactureData): Promise<Blob> {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(...DARK);
-  doc.text(
-    `Mode : ${facture.modePaiement || "Virement bancaire"}`,
-    18,
-    payY + 10
-  );
+  doc.text(condLines, 18, payY + 10);
   if (facture.iban) {
-    doc.text(`IBAN : ${facture.iban}`, 18, payY + 17);
+    const ibanY = payY + 10 + condLines.length * 5;
+    doc.text(`IBAN : ${facture.iban}`, 18, ibanY);
   }
 
   // Late payment notice
   doc.setFont("helvetica", "italic");
   doc.setFontSize(7);
   doc.setTextColor(...GRAY);
-  const noticeY = payY + (facture.iban ? 24 : 18);
+  const noticeY = payY + condBlockH + 4;
   doc.text(
     "En cas de retard, indemnité forfaitaire de recouvrement : 40 €. Taux pénalités : 3× taux légal.",
     14,
@@ -273,16 +298,17 @@ export async function generateFacturePDF(facture: FactureData): Promise<Blob> {
   );
 
   // ── Notes
+  let bottomY = noticeY + 8;
   if (facture.notes) {
-    const notesY = noticeY + 10;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8);
     doc.setTextColor(...GRAY);
-    doc.text("NOTES", 14, notesY);
+    doc.text("NOTES", 14, bottomY);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     doc.setTextColor(...DARK);
-    doc.text(facture.notes, 14, notesY + 5, { maxWidth: W - 28 });
+    doc.text(facture.notes, 14, bottomY + 5, { maxWidth: W - 28 });
+    bottomY += 5 + doc.splitTextToSize(facture.notes, W - 28).length * 5 + 4;
   }
 
   // ── Chorus Pro stamp

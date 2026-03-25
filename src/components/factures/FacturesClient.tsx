@@ -21,14 +21,25 @@ import { clsx } from "clsx";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
+import { SaveStatusBadge } from "@/components/ui/SaveStatusBadge";
+import EditFactureModal, { type EditFactureResult } from "./EditFactureModal";
 import SendEmailModal from "./SendEmailModal";
 import FacturePreviewModal from "./FacturePreviewModal";
 import NewFactureModal, { type NewFactureResult } from "./NewFactureModal";
 import { generateFacturePDF, buildFactureDataFromRow, type FactureData } from "@/lib/pdf-facture";
 import { createBrowserClient } from "@/lib/supabase-client";
+import { getChorusFixSuggestion } from "@/lib/chorus-fix";
+import ChorusDashboard from "@/components/chorus/ChorusDashboard";
 import { useDebounce } from "@/hooks/useDebounce";
+import { useAutosave } from "@/hooks/useAutosave";
+import { useHistory } from "@/hooks/useHistory";
+import { useOfflineSave } from "@/hooks/useOfflineSave";
 
 type FactureStatus = "payée" | "envoyée" | "en retard" | "brouillon";
+
+type ChorusStatut = "depose" | "en_traitement" | "acceptee" | "rejetee";
+
+const CHORUS_MAX_RETRIES = 3;
 
 interface Facture {
   id: string;
@@ -42,8 +53,13 @@ interface Facture {
   echeance: string;
   status: FactureStatus;
   chorus: boolean;
+  chorus_status?: ChorusStatut | null;
+  chorus_last_error?: string | null;
+  chorus_retry_count?: number;
+  auto_send_chorus?: boolean;
 }
 
+type EditingState = { _uuid: string; objet: string; status: FactureStatus };
 
 const STATUS_CONFIG: Record<FactureStatus, { variant: "success" | "warning" | "error" | "info" | "default"; label: string }> = {
   payée: { variant: "success", label: "Payée" },
@@ -76,49 +92,105 @@ export default function FacturesClient() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingData, setEditingData] = useState<(Partial<Facture> & { _uuid: string }) | null>(null);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [editingData, setEditingData] = useState<EditingState | null>(null);
+  const [showRestoreBanner, setShowRestoreBanner] = useState(false);
+  const [pendingDraft, setPendingDraft] = useState<EditingState | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+  const [editModalTarget, setEditModalTarget] = useState<{ uuid: string; numero: string } | null>(null);
+  const [sendingChorusId, setSendingChorusId] = useState<string | null>(null);
+  const [chorusSyncing, setChorusSyncing] = useState(false);
+  const [lastNotifCheck, setLastNotifCheck] = useState<string | null>(null);
 
-  // Correctif 2 : snapshot pour comparer avant PATCH
-  const editingSnapshotRef = useRef<{ objet?: string; status?: string } | null>(null);
-  // Correctif 3 : ref pour revoquer les blob URLs proprement
+  // Snapshot ref — type élargi pour compatibilité avec useAutosave
+  const editingSnapshotRef = useRef<Record<string, unknown> | null>(null);
+  // Ref pour revoquer les blob URLs proprement
   const previewUrlRef = useRef<string | null>(null);
+  // Ref pour le polling Chorus — évite les stale closures sans re-enregistrer l'effet
+  const pendingChorusRef = useRef<Facture[]>([]);
+  // Ref pour scroller jusqu'au dashboard Chorus depuis le header
+  const chorusDashboardRef = useRef<HTMLDivElement>(null);
 
-  const debouncedEditingData = useDebounce(editingData, 800);
+  // ─── Hooks premium ─────────────────────────────────────────────────────────
 
-  // Correctif 1+2 : autosave avec comparaison snapshot + gestion d'erreurs + logs
+  const history = useHistory<EditingState>({ maxStack: 20 });
+
+  const currentEditingUuid = editingId
+    ? factures.find((f) => f.id === editingId)?._uuid ?? null
+    : null;
+  const offlineKey = currentEditingUuid ? `facture:${currentEditingUuid}` : null;
+
+  const { getDraft, clearDraft } = useOfflineSave<EditingState>({
+    storageKey: offlineKey,
+    data: editingData,
+  });
+
+  const debouncedEditingData = useDebounce(
+    editingData as ({ _uuid: string } & Record<string, unknown>) | null,
+    800,
+  );
+
+  const { status: saveStatus, reset: resetSave, isOnline } = useAutosave({
+    data: debouncedEditingData,
+    snapshotRef: editingSnapshotRef,
+    compareKeys: ["objet", "status"],
+    buildUrl: (uuid) => `/api/factures/${uuid}`,
+    buildPayload: (d) => ({ objet: d.objet, statut: d.status }),
+    onError: (msg) => showToast(msg, "warning"),
+    onSaved: () => { if (offlineKey) clearDraft(offlineKey); },
+  });
+
+  // Dirty state : données locales différentes du snapshot
+  const isDirty =
+    editingId != null &&
+    editingData != null &&
+    editingSnapshotRef.current != null &&
+    (editingData.objet !== editingSnapshotRef.current.objet ||
+      editingData.status !== editingSnapshotRef.current.status);
+
+  // ─── Détection mobile ───────────────────────────────────────────────────────
   useEffect(() => {
-    if (!debouncedEditingData?._uuid) return;
-    const snap = editingSnapshotRef.current;
-    if (
-      snap &&
-      debouncedEditingData.objet === snap.objet &&
-      debouncedEditingData.status === snap.status
-    ) {
-      console.log("[Autosave] facture no changes, skip PATCH");
-      return;
-    }
-    console.log("[Autosave] facture saving...", debouncedEditingData._uuid);
-    setSaveStatus("saving");
-    fetch(`/api/factures/${debouncedEditingData._uuid}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ objet: debouncedEditingData.objet, statut: debouncedEditingData.status }),
-    })
-      .then(r => {
-        if (!r.ok) return Promise.reject(r);
-        console.log("[Autosave] facture saved", debouncedEditingData._uuid);
-        setSaveStatus("saved");
-      })
-      .catch(err => {
-        console.error("[Autosave] facture error", err);
-        setSaveStatus("error");
-        setToast({ msg: "Échec de la sauvegarde automatique — modifications conservées", type: "warning" });
-        setTimeout(() => setToast(null), 4000);
-      });
-  }, [debouncedEditingData]);
+    setIsMobile(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent));
+  }, []);
 
-  // Correctif 3 : cleanup preview URL au démontage du composant
+  // ─── Protection navigation ──────────────────────────────────────────────────
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) { e.preventDefault(); e.returnValue = ""; }
+    };
+    const handlePageHide = () => {
+      if (isDirty) {
+        console.log("[FacturesClient] pagehide avec modifications — préservées dans localStorage");
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("pagehide", handlePageHide);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("pagehide", handlePageHide);
+    };
+  }, [isDirty]);
+
+  // ─── Raccourcis clavier Undo / Redo ─────────────────────────────────────────
+  useEffect(() => {
+    if (!editingId) return;
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key !== "z") return;
+      e.preventDefault();
+      const next = e.shiftKey ? history.redo() : history.undo();
+      if (!next) return;
+      setEditingData(next);
+      setFactures((prev) =>
+        prev.map((f) =>
+          f.id === editingId ? { ...f, objet: next.objet, status: next.status } : f,
+        ),
+      );
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingId]);
+
+  // ─── Cleanup preview URL au démontage ───────────────────────────────────────
   useEffect(() => {
     return () => { if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current); };
   }, []);
@@ -131,24 +203,163 @@ export default function FacturesClient() {
       .catch((err) => { console.error("[FacturesClient] fetch /api/factures:", err); });
   }, []);
 
+  // ─── Polling notifications Chorus (toutes les 30s) ───────────────────────────
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const resp = await fetch("/api/notifications");
+        if (!resp.ok) return;
+        const data = await resp.json() as { notifications: Array<{ id: string; type: string; title: string; message: string | null }> };
+        const notifs = data.notifications ?? [];
+        if (notifs.length === 0) return;
+
+        // Afficher un toast par notification (max 2)
+        notifs.slice(0, 2).forEach((n) => {
+          const isError = n.type.includes("error") || n.type.includes("rejetee");
+          showToast(n.title + (n.message ? ` — ${n.message.slice(0, 60)}` : ""), isError ? "warning" : "success");
+        });
+
+        // Marquer comme lues
+        await fetch("/api/notifications", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: notifs.map((n) => n.id) }),
+        });
+
+        setLastNotifCheck(new Date().toISOString());
+      } catch { /* silencieux */ }
+    };
+
+    poll();
+    const interval = setInterval(poll, 30_000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ─── Auto-poll statut Chorus (toutes les 10s si dépôts en attente) ─────────
+  // Met à jour le ref à chaque rendu — le ref est lu dans l'intervalle
+  // pour éviter les stale closures sans re-enregistrer l'effet à chaque changement.
+  const hasPendingChorus = factures.some(
+    (f) => f.chorus && f._uuid && (f.chorus_status === "depose" || f.chorus_status === "en_traitement"),
+  );
+  pendingChorusRef.current = factures.filter(
+    (f) => f.chorus && f._uuid && (f.chorus_status === "depose" || f.chorus_status === "en_traitement"),
+  );
+
+  useEffect(() => {
+    if (!hasPendingChorus) {
+      setChorusSyncing(false);
+      return;
+    }
+
+    setChorusSyncing(true);
+
+    const interval = setInterval(async () => {
+      for (const f of pendingChorusRef.current) {
+        try {
+          const resp = await fetch(`/api/chorus/status/${f._uuid}`);
+          if (!resp.ok) continue;
+          const data = await resp.json() as {
+            chorus_status?: string | null;
+            chorus_last_error?: string | null;
+          };
+          if (data.chorus_status && data.chorus_status !== f.chorus_status) {
+            setFactures((prev) =>
+              prev.map((x) =>
+                x.id === f.id
+                  ? {
+                      ...x,
+                      chorus_status: data.chorus_status as ChorusStatut,
+                      chorus_last_error: data.chorus_last_error ?? null,
+                    }
+                  : x,
+              ),
+            );
+            if (data.chorus_status === "acceptee") {
+              showToast(`Facture ${f.id} acceptée par Chorus Pro ✓`);
+            } else if (data.chorus_status === "rejetee") {
+              showToast(`Facture ${f.id} rejetée — vérifiez les détails`, "warning");
+            }
+          }
+        } catch {
+          // Silencieux — l'utilisateur sera informé au prochain cycle
+        }
+      }
+    }, 10_000);
+
+    return () => {
+      clearInterval(interval);
+      setChorusSyncing(false);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasPendingChorus]);
+
   // Charge le profil artisan pour les PDFs
   useEffect(() => {
     const supabase = createBrowserClient();
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
-      supabase.from("users").select("prenom,nom,raison_sociale,adresse,ville,code_postal,siret,email,tel,logo_url").eq("id", user.id).single().then(({ data }) => {
-        if (!data) return;
-        const nom = data.raison_sociale || [data.prenom, data.nom].filter(Boolean).join(" ");
-        const adresse = [data.adresse, [data.code_postal, data.ville].filter(Boolean).join(" ")].filter(Boolean).join(", ");
-        setArtisan({ nom, adresse, siret: data.siret || "", email: data.email || user.email || "", tel: data.tel || "", logo_url: data.logo_url ?? null });
-      });
+      supabase
+        .from("users")
+        .select("prenom,nom,raison_sociale,adresse,ville,code_postal,siret,email,tel,logo_url")
+        .eq("id", user.id)
+        .single()
+        .then(({ data }) => {
+          if (!data) return;
+          const nom = data.raison_sociale || [data.prenom, data.nom].filter(Boolean).join(" ");
+          const adresse = [data.adresse, [data.code_postal, data.ville].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+          setArtisan({ nom, adresse, siret: data.siret || "", email: data.email || user.email || "", tel: data.tel || "", logo_url: data.logo_url ?? null });
+        });
     }).catch((err) => { console.error("[FacturesClient] fetch artisan profile:", err); });
   }, []);
+
+  // ─── Helpers ────────────────────────────────────────────────────────────────
 
   const showToast = (msg: string, type: "success" | "info" | "warning" = "success") => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3200);
   };
+
+  /** Entre en mode édition et vérifie si un brouillon local existe. */
+  const startEdit = (f: Facture) => {
+    setEditingId(f.id);
+    editingSnapshotRef.current = { objet: f.objet, status: f.status };
+    const initial: EditingState = { _uuid: f._uuid ?? "", objet: f.objet, status: f.status };
+    setEditingData(initial);
+    history.reset(initial);
+    resetSave();
+
+    // Vérifier un brouillon non sauvegardé
+    if (f._uuid) {
+      const draft = getDraft<EditingState>(`facture:${f._uuid}`);
+      if (draft && (draft.objet !== f.objet || draft.status !== f.status)) {
+        setPendingDraft(draft);
+        setShowRestoreBanner(true);
+      }
+    }
+  };
+
+  const handleRestoreDraft = () => {
+    if (!pendingDraft || !editingId) return;
+    setEditingData(pendingDraft);
+    history.reset(pendingDraft);
+    setFactures((prev) =>
+      prev.map((f) =>
+        f.id === editingId ? { ...f, objet: pendingDraft.objet, status: pendingDraft.status } : f,
+      ),
+    );
+    setShowRestoreBanner(false);
+    setPendingDraft(null);
+    showToast("Modifications restaurées", "info");
+  };
+
+  const handleDiscardDraft = () => {
+    if (offlineKey) clearDraft(offlineKey);
+    setShowRestoreBanner(false);
+    setPendingDraft(null);
+  };
+
+  // ─── Handlers existants ─────────────────────────────────────────────────────
 
   const handleDownload = async (f: Facture) => {
     setDownloadingId(f.id);
@@ -163,7 +374,6 @@ export default function FacturesClient() {
     showToast(`PDF ${f.id} téléchargé`, "info");
   };
 
-  // Correctif 3 : revoke ancien URL avant remplacement
   const handleOpenPreview = async (f: Facture) => {
     console.log("[FacturesClient] aperçu clic:", f.id);
     if (previewUrlRef.current) {
@@ -188,12 +398,13 @@ export default function FacturesClient() {
     setPreviewTarget(null);
   };
 
+  /** Met à jour un champ en local + pousse dans l'historique undo/redo. */
   const updateLocal = (id: string, field: keyof Facture, value: string) => {
-    setFactures(prev => prev.map(f => f.id === id ? { ...f, [field]: value } : f));
-    const target = factures.find(f => f.id === id);
-    if (target?._uuid) {
-      setEditingData(prev => ({ ...prev, _uuid: target._uuid!, [field]: value }));
-      setSaveStatus("idle");
+    setFactures((prev) => prev.map((f) => f.id === id ? { ...f, [field]: value } : f));
+    if (editingData) {
+      const next: EditingState = { ...editingData, [field]: value } as EditingState;
+      setEditingData(next);
+      history.push(next);
     }
   };
 
@@ -205,12 +416,22 @@ export default function FacturesClient() {
   };
 
   const handleRelance = (f: Facture) => {
-    setEmailTarget({
-      ...f,
-      objet: `[RELANCE] ${f.objet}`,
-    });
+    setEmailTarget({ ...f, objet: `[RELANCE] ${f.objet}` });
     setMenuOpen(null);
     showToast(`Relance préparée pour ${f.client}`, "warning");
+  };
+
+  /** Applique les modifications complètes d'une facture après EditFactureModal */
+  const handleEditSaved = (result: EditFactureResult) => {
+    setFactures((prev) =>
+      prev.map((f) =>
+        f.id === result.id
+          ? { ...f, client: result.client, objet: result.objet, montant: result.montant, tva: result.tva, total: result.total, date: result.date, echeance: result.echeance, status: result.status }
+          : f,
+      ),
+    );
+    setEditModalTarget(null);
+    showToast("Facture mise à jour ✓");
   };
 
   const handleDelete = (id: string) => {
@@ -222,6 +443,56 @@ export default function FacturesClient() {
   const handleNewFacture = (result: NewFactureResult) => {
     setFactures((prev) => [result, ...prev]);
     showToast(`Facture ${result.id} créée`);
+  };
+
+  const handleSendChorus = async (f: Facture) => {
+    if (!f._uuid) {
+      console.warn("[FacturesClient] handleSendChorus: _uuid manquant pour", f.id);
+      return;
+    }
+    console.log(`[FacturesClient] handleSendChorus: POST /api/chorus/send/${f._uuid} (facture ${f.id})`);
+    setSendingChorusId(f.id);
+    try {
+      const resp = await fetch(`/api/chorus/send/${f._uuid}`, { method: "POST" });
+      const data = await resp.json() as {
+        success?: boolean;
+        error?: string;
+        chorus_status?: string;
+        chorus_retry_count?: number;
+        retries_remaining?: number;
+      };
+      console.log(`[FacturesClient] handleSendChorus response: status=${resp.status}`, data);
+      if (resp.ok && data.success) {
+        setFactures((prev) =>
+          prev.map((x) =>
+            x.id === f.id
+              ? {
+                  ...x,
+                  chorus_status: "depose" as ChorusStatut,
+                  chorus_last_error: null,
+                  chorus_retry_count: data.chorus_retry_count ?? (f.chorus_retry_count ?? 0) + 1,
+                }
+              : x,
+          ),
+        );
+        showToast("Facture envoyée à Chorus Pro ✓");
+      } else {
+        setFactures((prev) =>
+          prev.map((x) =>
+            x.id === f.id
+              ? { ...x, chorus_retry_count: data.chorus_retry_count ?? (f.chorus_retry_count ?? 0) + 1 }
+              : x,
+          ),
+        );
+        const retRem = data.retries_remaining;
+        const suffix = retRem !== undefined && retRem > 0 ? ` (${retRem} essai${retRem > 1 ? "s" : ""} restant)` : "";
+        showToast((data.error ?? "Erreur Chorus Pro") + suffix, "warning");
+      }
+    } catch {
+      showToast("Erreur réseau lors de l'envoi Chorus", "warning");
+    } finally {
+      setSendingChorusId(null);
+    }
   };
 
   const handleSend = (f: Facture) => {
@@ -263,10 +534,49 @@ export default function FacturesClient() {
       {toast && (
         <div className={clsx(
           "fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-card border animate-fade-in",
-          toastColors[toast.type]
+          toastColors[toast.type],
         )}>
-          <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+          {toast.type === "warning" ? (
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+          ) : toast.type === "info" ? (
+            <Clock className="w-4 h-4 flex-shrink-0" />
+          ) : (
+            <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+          )}
           <span className="text-sm font-medium">{toast.msg}</span>
+        </div>
+      )}
+
+      {/* Bannière restauration brouillon */}
+      {showRestoreBanner && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-3 bg-surface border border-surface-border rounded-xl shadow-card animate-fade-in max-w-sm w-[calc(100%-2rem)]">
+          <span className="text-sm text-text-primary flex-1">Modifications non sauvegardées trouvées</span>
+          <button
+            onClick={handleRestoreDraft}
+            className="px-2.5 py-1 rounded-lg bg-primary text-background text-xs font-semibold flex-shrink-0"
+          >
+            Restaurer
+          </button>
+          <button
+            onClick={handleDiscardDraft}
+            className="px-2.5 py-1 rounded-lg bg-surface-active text-text-muted text-xs font-semibold flex-shrink-0"
+          >
+            Ignorer
+          </button>
+        </div>
+      )}
+
+      {/* Bannière mobile — isDirty sans beforeunload fiable */}
+      {isDirty && isMobile && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-status-warning px-4 py-2 text-xs text-white font-medium text-center">
+          Modifications non sauvegardées — ne quittez pas la page
+        </div>
+      )}
+
+      {/* Bandeau hors ligne */}
+      {!isOnline && editingId && (
+        <div className="fixed top-0 left-0 right-0 z-40 bg-status-warning/90 px-4 py-2 text-xs text-white font-medium text-center">
+          Hors ligne — vos modifications sont préservées localement
         </div>
       )}
 
@@ -295,6 +605,14 @@ export default function FacturesClient() {
           onCreated={handleNewFacture}
         />
       )}
+      {editModalTarget && (
+        <EditFactureModal
+          factureUuid={editModalTarget.uuid}
+          factureNumero={editModalTarget.numero}
+          onClose={() => setEditModalTarget(null)}
+          onSaved={handleEditSaved}
+        />
+      )}
 
       <div className="space-y-6 animate-fade-in">
         {/* Header */}
@@ -310,9 +628,31 @@ export default function FacturesClient() {
               )}
             </p>
           </div>
-          <div className="hidden md:flex gap-2">
-            <Button variant="secondary" icon={Building2} size="sm">
+          <div className="hidden md:flex gap-2 items-center">
+            {chorusSyncing && (
+              <div
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-status-info/10 border border-status-info/20 text-status-info text-xs font-medium"
+                title={`Suivi Chorus actif — ${factures.filter((f) => f.chorus && (f.chorus_status === "depose" || f.chorus_status === "en_traitement")).length} facture(s) surveillée(s)`}
+              >
+                <div className="w-1.5 h-1.5 rounded-full bg-status-info animate-pulse" />
+                Chorus sync
+              </div>
+            )}
+            <Button
+              variant="secondary"
+              icon={Building2}
+              size="sm"
+              onClick={() => {
+                console.log("[FacturesClient] chorus header click — scroll vers dashboard");
+                chorusDashboardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+              }}
+            >
               Chorus Pro
+              {factures.filter((f) => f.chorus && f.chorus_status == null && f.status !== "payée").length > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 rounded-full bg-status-info/20 text-status-info text-xs font-bold leading-none">
+                  {factures.filter((f) => f.chorus && f.chorus_status == null && f.status !== "payée").length}
+                </span>
+              )}
             </Button>
             <Button
               variant="primary"
@@ -340,6 +680,11 @@ export default function FacturesClient() {
               <p className="text-text-muted text-sm mt-1">{s.label}</p>
             </Card>
           ))}
+        </div>
+
+        {/* Dashboard Chorus Pro (plan pro+, masqué si aucune facture Chorus) */}
+        <div ref={chorusDashboardRef}>
+          <ChorusDashboard />
         </div>
 
         {/* En retard banner */}
@@ -387,12 +732,28 @@ export default function FacturesClient() {
                   <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
                     <Badge variant={sc.variant} size="sm" dot>{sc.label}</Badge>
                     <span className="font-mono text-sm font-bold text-text-primary">{f.total}</span>
+                    {f.chorus && f.chorus_status && (
+                      <Badge
+                        variant={
+                          f.chorus_status === "acceptee" ? "success"
+                          : f.chorus_status === "rejetee" ? "error"
+                          : f.chorus_status === "en_traitement" ? "warning"
+                          : "info"
+                        }
+                        size="sm"
+                      >
+                        {f.chorus_status === "acceptee" ? "✓ Acceptée"
+                          : f.chorus_status === "rejetee" ? "Rejetée"
+                          : f.chorus_status === "en_traitement" ? "En traitement"
+                          : "Déposée"}
+                      </Badge>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center justify-between pt-2 border-t border-surface-border">
                   <span className={clsx(
                     "text-xs",
-                    f.status === "en retard" ? "text-status-error font-semibold" : "text-text-muted"
+                    f.status === "en retard" ? "text-status-error font-semibold" : "text-text-muted",
                   )}>
                     Échéance : {f.echeance}
                   </span>
@@ -441,7 +802,7 @@ export default function FacturesClient() {
                     "px-3 py-1 rounded-lg text-xs font-medium transition-colors",
                     filter === f
                       ? "bg-primary/10 text-primary"
-                      : "text-text-muted hover:text-text-primary hover:bg-surface-hover"
+                      : "text-text-muted hover:text-text-primary hover:bg-surface-hover",
                   )}
                 >
                   {f}
@@ -482,7 +843,7 @@ export default function FacturesClient() {
                         onClick={() => !isEditing && handleOpenPreview(f)}
                         className={clsx(
                           "border-b border-surface-border last:border-0 transition-colors group",
-                          isEditing ? "bg-primary/5" : "hover:bg-surface-hover/50 cursor-pointer"
+                          isEditing ? "bg-primary/5" : "hover:bg-surface-hover/50 cursor-pointer",
                         )}
                       >
                         <td className="px-4 py-4 font-mono text-sm text-primary font-semibold">
@@ -496,14 +857,14 @@ export default function FacturesClient() {
                             <input
                               autoFocus
                               value={f.objet}
-                              onClick={e => e.stopPropagation()}
-                              onChange={e => updateLocal(f.id, "objet", e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => updateLocal(f.id, "objet", e.target.value)}
                               className="input-field text-sm w-full"
                             />
                           ) : (
                             <span
                               className="truncate block"
-                              onDoubleClick={e => { e.stopPropagation(); setEditingId(f.id); editingSnapshotRef.current = { objet: f.objet, status: f.status }; setEditingData({ _uuid: f._uuid ?? "", objet: f.objet, status: f.status }); setSaveStatus("idle"); }}
+                              onDoubleClick={(e) => { e.stopPropagation(); startEdit(f); }}
                             >
                               {f.objet}
                             </span>
@@ -514,7 +875,7 @@ export default function FacturesClient() {
                         <td className="px-4 py-4 text-sm text-text-muted whitespace-nowrap">{f.date}</td>
                         <td className={clsx(
                           "px-4 py-4 text-sm whitespace-nowrap",
-                          f.status === "en retard" ? "text-status-error font-semibold" : "text-text-muted"
+                          f.status === "en retard" ? "text-status-error font-semibold" : "text-text-muted",
                         )}>
                           {f.echeance}
                         </td>
@@ -522,11 +883,11 @@ export default function FacturesClient() {
                           {isEditing ? (
                             <select
                               value={f.status}
-                              onClick={e => e.stopPropagation()}
-                              onChange={e => updateLocal(f.id, "status", e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => updateLocal(f.id, "status", e.target.value)}
                               className="input-field text-xs py-1"
                             >
-                              {(Object.keys(STATUS_CONFIG) as FactureStatus[]).map(s => (
+                              {(Object.keys(STATUS_CONFIG) as FactureStatus[]).map((s) => (
                                 <option key={s} value={s}>{STATUS_CONFIG[s].label}</option>
                               ))}
                             </select>
@@ -536,40 +897,68 @@ export default function FacturesClient() {
                         </td>
                         <td className="px-4 py-4">
                           {f.chorus ? (
-                            <Badge variant="success" size="sm">✓ Déposé</Badge>
+                            f.chorus_status === "acceptee" ? (
+                              <Badge variant="success" size="sm" dot>Acceptée</Badge>
+                            ) : f.chorus_status === "depose" ? (
+                              <Badge variant="info" size="sm" dot>Déposée</Badge>
+                            ) : f.chorus_status === "en_traitement" ? (
+                              <Badge variant="warning" size="sm" dot>En traitement</Badge>
+                            ) : f.chorus_status === "rejetee" ? (
+                              <div className="space-y-0.5">
+                                <span
+                                  title={(() => {
+                                    const fix = getChorusFixSuggestion(f.chorus_last_error);
+                                    return `${fix.message}\n→ ${fix.action}`;
+                                  })()}
+                                  className="cursor-help"
+                                >
+                                  <Badge variant="error" size="sm" dot>Rejetée ⓘ</Badge>
+                                </span>
+                                {f.chorus_last_error && (
+                                  <p
+                                    className="text-xs text-status-error/70 leading-tight max-w-[130px] truncate"
+                                    title={f.chorus_last_error}
+                                  >
+                                    {f.chorus_last_error}
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
+                              <Badge variant="default" size="sm" dot>En préparation</Badge>
+                            )
                           ) : (
                             <span className="text-text-muted text-sm">—</span>
                           )}
                         </td>
                         <td className="px-4 py-4">
-                          <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                            {/* Modifier / Terminer */}
-                            <button
-                              title={isEditing ? "Terminer" : "Modifier"}
-                              onClick={() => {
-                                if (isEditing) { setEditingId(null); }
-                                else { setEditingId(f.id); editingSnapshotRef.current = { objet: f.objet, status: f.status }; setEditingData({ _uuid: f._uuid ?? "", objet: f.objet, status: f.status }); setSaveStatus("idle"); }
-                              }}
-                              className={clsx(
-                                "p-1.5 rounded-lg transition-colors",
-                                isEditing
-                                  ? "text-primary bg-primary/10 hover:bg-primary/20"
-                                  : "text-text-muted hover:text-text-primary hover:bg-surface-active"
-                              )}
-                            >
-                              {isEditing ? <Check className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
-                            </button>
-
-                            {/* Save status */}
-                            {isEditing && saveStatus !== "idle" && (
-                              <span className={clsx("text-[10px] font-medium px-1.5 py-0.5 rounded", {
-                                "text-status-info bg-status-info/10": saveStatus === "saving",
-                                "text-primary bg-primary/10": saveStatus === "saved",
-                                "text-status-error bg-status-error/10": saveStatus === "error",
-                              })}>
-                                {saveStatus === "saving" ? "Sauvegarde…" : saveStatus === "saved" ? "Sauvegardé ✓" : "Erreur"}
-                              </span>
+                          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                            {/* Terminer l'inline editing (si actif) */}
+                            {isEditing && (
+                              <button
+                                title="Terminer"
+                                onClick={() => setEditingId(null)}
+                                className="p-1.5 rounded-lg transition-colors text-primary bg-primary/10 hover:bg-primary/20"
+                              >
+                                <Check className="w-4 h-4" />
+                              </button>
                             )}
+                            {/* Modifier (ouvre la modale complète) */}
+                            {!isEditing && f._uuid && (
+                              <button
+                                title="Modifier la facture complète"
+                                onClick={() => setEditModalTarget({ uuid: f._uuid!, numero: f.id })}
+                                className="p-1.5 rounded-lg transition-colors text-text-muted hover:text-text-primary hover:bg-surface-active"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                            )}
+
+                            {/* Badge d'état de sauvegarde */}
+                            <SaveStatusBadge
+                              status={saveStatus}
+                              isDirty={isDirty}
+                              isEditing={isEditing}
+                            />
 
                             {/* Download PDF */}
                             <button
@@ -584,6 +973,67 @@ export default function FacturesClient() {
                                 <Download className="w-4 h-4" />
                               )}
                             </button>
+
+                            {/* Bouton Chorus Pro dynamique */}
+                            {f.chorus && f.status !== "payée" && (() => {
+                              const retries = f.chorus_retry_count ?? 0;
+                              const isRejetee = f.chorus_status === "rejetee";
+                              const isSending = sendingChorusId === f.id;
+                              const isAcceptee = f.chorus_status === "acceptee";
+                              const retryBlocked = isRejetee && retries >= CHORUS_MAX_RETRIES;
+
+                              if (isAcceptee) return null;
+
+                              const label = isSending
+                                ? "En cours…"
+                                : isRejetee
+                                ? "Renvoyer"
+                                : f.chorus_status == null
+                                ? "Envoyer"
+                                : null;
+
+                              if (!label && !isSending) return null;
+
+                              const titleText = retryBlocked
+                                ? `Limite de ${CHORUS_MAX_RETRIES} tentatives atteinte`
+                                : isRejetee
+                                ? `Renvoyer à Chorus Pro (tentative ${retries + 1}/${CHORUS_MAX_RETRIES + 1})`
+                                : "Envoyer à Chorus Pro";
+
+                              return (
+                                <button
+                                  title={titleText}
+                                  onClick={() => {
+                                    if (retryBlocked) return;
+                                    console.log(
+                                      isRejetee
+                                        ? `[FacturesClient] chorus retry click: ${f.id} (uuid=${f._uuid}, retries=${retries})`
+                                        : `[FacturesClient] chorus send click: ${f.id} (uuid=${f._uuid})`,
+                                    );
+                                    handleSendChorus(f);
+                                  }}
+                                  disabled={isSending || retryBlocked}
+                                  className={clsx(
+                                    "flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors",
+                                    retryBlocked
+                                      ? "opacity-40 cursor-not-allowed text-text-muted bg-surface-active"
+                                      : isRejetee
+                                      ? "text-status-error bg-status-error/10 hover:bg-status-error/20"
+                                      : "text-status-info bg-status-info/10 hover:bg-status-info/20",
+                                  )}
+                                >
+                                  {isSending ? (
+                                    <div className={clsx(
+                                      "w-3 h-3 border-2 border-t-transparent rounded-full animate-spin",
+                                      isRejetee ? "border-status-error" : "border-status-info",
+                                    )} />
+                                  ) : (
+                                    <Building2 className="w-3 h-3" />
+                                  )}
+                                  {label}
+                                </button>
+                              );
+                            })()}
 
                             {/* Send email */}
                             {f.status !== "payée" && (

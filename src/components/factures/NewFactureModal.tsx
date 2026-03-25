@@ -99,6 +99,9 @@ export default function NewFactureModal({ onClose, onCreated }: Props) {
   const [dateEmission, setDateEmission] = useState(todayISO());
   const [dateEcheance, setDateEcheance] = useState(in30DaysISO());
   const [notes, setNotes] = useState("");
+  const [conditionsPaiement, setConditionsPaiement] = useState("");
+  const [remisePercent, setRemisePercent] = useState(0);
+  const [acompte, setAcompte] = useState(0);
   const [lignes, setLignes] = useState<Ligne[]>([newLigne()]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -127,10 +130,15 @@ export default function NewFactureModal({ onClose, onCreated }: Props) {
   };
 
   const totals = useMemo(() => {
-    const ht = lignes.reduce((s, l) => s + l.quantite * l.prix_unitaire, 0);
-    const tva = lignes.reduce((s, l) => s + l.quantite * l.prix_unitaire * (l.tva / 100), 0);
-    return { ht, tva, ttc: ht + tva };
-  }, [lignes]);
+    const htBrut  = lignes.reduce((s, l) => s + l.quantite * l.prix_unitaire, 0);
+    const remise  = htBrut * (remisePercent / 100);
+    const htNet   = htBrut - remise;
+    const df      = 1 - remisePercent / 100;
+    const tva     = lignes.reduce((s, l) => s + l.quantite * l.prix_unitaire * df * (l.tva / 100), 0);
+    const ttc     = htNet + tva;
+    const restant = Math.max(0, ttc - acompte);
+    return { htBrut, remise, htNet, tva, ttc, restant };
+  }, [lignes, remisePercent, acompte]);
 
   const updateLigne = (id: string, field: keyof Ligne, value: string | number) => {
     setLignes((prev) => prev.map((l) => (l.id === id ? { ...l, [field]: value } : l)));
@@ -180,10 +188,10 @@ export default function NewFactureModal({ onClose, onCreated }: Props) {
             tva: l.tva,
             total_ht: l.quantite * l.prix_unitaire,
           })),
-          montant_ht: totals.ht,
-          montant_tva: totals.tva,
-          montant_ttc: totals.ttc,
+          remise_percent: remisePercent,
+          acompte,
           notes: notes.trim() || null,
+          conditions_paiement: conditionsPaiement.trim() || null,
           numero,
         }),
       });
@@ -203,7 +211,7 @@ export default function NewFactureModal({ onClose, onCreated }: Props) {
       id: numero,
       client: clientLabel,
       objet: objet.trim(),
-      montant: `${fmt(totals.ht)} €`,
+      montant: `${fmt(totals.htNet)} €`,
       tva: `${fmt(totals.tva)} €`,
       total: `${fmt(totals.ttc)} €`,
       date: dateFormatted,
@@ -382,14 +390,54 @@ export default function NewFactureModal({ onClose, onCreated }: Props) {
             </div>
           </section>
 
+          {/* Remise & Acompte */}
+          <section className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="field-label">Remise (%)</label>
+              <div className="relative">
+                <input
+                  type="number" min={0} max={100} step={0.5}
+                  value={remisePercent}
+                  onChange={(e) => setRemisePercent(Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)))}
+                  className="input-field w-full text-sm pr-7"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted text-sm">%</span>
+              </div>
+            </div>
+            <div>
+              <label className="field-label">Acompte versé (€)</label>
+              <div className="relative">
+                <input
+                  type="number" min={0} step={1}
+                  value={acompte}
+                  onChange={(e) => setAcompte(Math.max(0, parseFloat(e.target.value) || 0))}
+                  className="input-field w-full text-sm pr-7"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted text-sm">€</span>
+              </div>
+            </div>
+          </section>
+
           {/* Totals */}
           <section className="flex justify-end">
-            <div className="w-64 space-y-1.5">
+            <div className="w-72 space-y-1.5">
               <div className="flex justify-between text-sm text-text-secondary">
-                <span>Total HT</span><span className="font-mono">{fmt(totals.ht)} €</span>
+                <span>Total HT brut</span><span className="font-mono">{fmt(totals.htBrut)} €</span>
               </div>
+              {remisePercent > 0 && (
+                <>
+                  <div className="flex justify-between text-sm text-status-warning">
+                    <span>Remise ({remisePercent}%)</span>
+                    <span className="font-mono">−{fmt(totals.remise)} €</span>
+                  </div>
+                  <div className="flex justify-between text-sm text-text-secondary">
+                    <span>Total HT net</span><span className="font-mono">{fmt(totals.htNet)} €</span>
+                  </div>
+                </>
+              )}
               {TVA_OPTIONS.filter((t) => t > 0).map((rate) => {
-                const base = lignes.filter((l) => l.tva === rate).reduce((s, l) => s + l.quantite * l.prix_unitaire, 0);
+                const df = 1 - remisePercent / 100;
+                const base = lignes.filter((l) => l.tva === rate).reduce((s, l) => s + l.quantite * l.prix_unitaire, 0) * df;
                 if (base === 0) return null;
                 return (
                   <div key={rate} className="flex justify-between text-xs text-text-muted">
@@ -400,13 +448,31 @@ export default function NewFactureModal({ onClose, onCreated }: Props) {
               <div className="flex justify-between text-base font-bold text-text-primary border-t border-surface-border pt-2 mt-2">
                 <span>Total TTC</span><span className="font-mono text-primary">{fmt(totals.ttc)} €</span>
               </div>
+              {acompte > 0 && (
+                <>
+                  <div className="flex justify-between text-sm text-text-muted">
+                    <span>Acompte versé</span>
+                    <span className="font-mono">−{fmt(acompte)} €</span>
+                  </div>
+                  <div className="flex justify-between text-sm font-bold text-text-primary border-t border-surface-border pt-2">
+                    <span>Reste à payer</span>
+                    <span className="font-mono text-status-warning">{fmt(totals.restant)} €</span>
+                  </div>
+                </>
+              )}
             </div>
           </section>
 
           {/* Notes */}
           <section>
             <label className="field-label">Notes (optionnel)</label>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Conditions particulières, délais, remarques…" className="input-field w-full text-sm resize-none" />
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Remarques, conditions particulières…" className="input-field w-full text-sm resize-none" />
+          </section>
+
+          {/* Conditions de paiement */}
+          <section>
+            <label className="field-label">Conditions de paiement (optionnel)</label>
+            <textarea value={conditionsPaiement} onChange={(e) => setConditionsPaiement(e.target.value)} rows={2} placeholder="Ex : Paiement à 30 jours. Pénalités de retard : 3× taux légal." className="input-field w-full text-sm resize-none" />
           </section>
         </div>
 

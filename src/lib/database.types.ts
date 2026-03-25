@@ -89,6 +89,9 @@ export type DevisRow = {
   montant_tva: number;
   montant_ttc: number;
   notes: string | null;
+  conditions_paiement: string | null;
+  remise_percent: number;
+  acompte: number;
   chorus_pro: boolean;
   pdf_url: string | null;
   created_at: string;
@@ -112,8 +115,16 @@ export type FactureRow = {
   montant_tva: number;
   montant_ttc: number;
   notes: string | null;
+  conditions_paiement: string | null;
+  remise_percent: number;
+  acompte: number;
   chorus_pro: boolean;
   num_engagement_chorus: string | null;
+  chorus_status: "depose" | "en_traitement" | "acceptee" | "rejetee" | null;
+  chorus_depot_id: string | null;
+  chorus_last_error: string | null;
+  chorus_retry_count: number;
+  auto_send_chorus: boolean;
   pdf_url: string | null;
   created_at: string;
   updated_at: string;
@@ -166,6 +177,28 @@ export type AvisGoogleRow = {
   statut: AvisStatut;
   created_at: string;
   updated_at: string;
+}
+
+export type ChorusQueueRow = {
+  id: string;
+  facture_id: string;
+  user_id: string;
+  status: "pending" | "processing" | "done" | "error";
+  error_message: string | null;
+  retry_count: number;
+  created_at: string;
+  processed_at: string | null;
+}
+
+export type NotificationRow = {
+  id: string;
+  user_id: string;
+  type: string;
+  title: string;
+  message: string | null;
+  data: Record<string, unknown> | null;
+  read: boolean;
+  created_at: string;
 }
 
 export type AutomatisationConfig = {
@@ -423,6 +456,59 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "automatisations_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      chorus_queue: {
+        Row: ChorusQueueRow;
+        Insert: {
+          id?: string;
+          facture_id: string;
+          user_id: string;
+          status?: "pending" | "processing" | "done" | "error";
+          error_message?: string | null;
+          retry_count?: number;
+          created_at?: string;
+          processed_at?: string | null;
+        };
+        Update: Partial<Omit<ChorusQueueRow, "id" | "created_at">>;
+        Relationships: [
+          {
+            foreignKeyName: "chorus_queue_facture_id_fkey";
+            columns: ["facture_id"];
+            isOneToOne: false;
+            referencedRelation: "factures";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "chorus_queue_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      notifications: {
+        Row: NotificationRow;
+        Insert: {
+          id?: string;
+          user_id: string;
+          type: string;
+          title: string;
+          message?: string | null;
+          data?: Record<string, unknown> | null;
+          read?: boolean;
+          created_at?: string;
+        };
+        Update: Partial<Omit<NotificationRow, "id" | "created_at">>;
+        Relationships: [
+          {
+            foreignKeyName: "notifications_user_id_fkey";
             columns: ["user_id"];
             isOneToOne: false;
             referencedRelation: "users";

@@ -1,15 +1,29 @@
 "use client";
 
+/**
+ * EditFactureModal — Modification complète d'une facture existante.
+ *
+ * Charge les données complètes via GET /api/factures/[uuid],
+ * pré-remplit le formulaire (lignes, montants, dates, client),
+ * puis envoie un PATCH complet à la sauvegarde.
+ * Les totaux sont recalculés en temps réel.
+ */
+
 import { useState, useMemo, useEffect } from "react";
-import { X, Plus, Trash2, User, UserPlus, ChevronDown, Loader2, Check } from "lucide-react";
+import {
+  X, Plus, Trash2, User, UserPlus, ChevronDown,
+  Loader2, Check, AlertCircle,
+} from "lucide-react";
 import { clsx } from "clsx";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+type FactureStatus = "payée" | "envoyée" | "en retard" | "brouillon";
+
 interface ClientOption {
   id: string;
-  dbId?: string; // UUID Supabase — présent si client vient de la DB
-  label: string; // "Nom Prénom" or raison sociale
+  dbId?: string;
+  label: string;
   email?: string;
   type: "particulier" | "professionnel";
 }
@@ -23,33 +37,30 @@ interface Ligne {
   tva: number;
 }
 
-export interface NewDevisResult {
-  id: string;
+export interface EditFactureResult {
+  id: string;      // numero (FAC-2024-xxx)
   client: string;
   objet: string;
-  montant: string;
+  montant: string; // HT formaté
+  tva: string;
+  total: string;   // TTC formaté
   date: string;
-  validite: string;
-  status: "brouillon";
+  echeance: string;
+  status: FactureStatus;
 }
 
 interface Props {
+  factureUuid: string;
+  factureNumero: string;
   onClose: () => void;
-  onCreated: (devis: NewDevisResult) => void;
+  onSaved: (result: EditFactureResult) => void;
 }
 
-// ─── Seed list utilisé uniquement si l'API ne répond pas ─────────────────────
-
-const FALLBACK_CLIENTS: ClientOption[] = [
-  { id: "c1", label: "Sophie Girard", email: "sophie@example.fr", type: "particulier" },
-  { id: "c2", label: "Famille Martin", email: "martin@example.fr", type: "particulier" },
-  { id: "c3", label: "Pierre Moreau", email: "pierre@example.fr", type: "particulier" },
-  { id: "c4", label: "SCI Verdure", email: "sci@verdure.fr", type: "professionnel" },
-  { id: "c5", label: "Mairie de Vanves", email: "contact@vanves.fr", type: "professionnel" },
-];
+// ─── Constantes ───────────────────────────────────────────────────────────────
 
 const TVA_OPTIONS = [0, 5.5, 10, 20];
 const UNITE_OPTIONS = ["u", "h", "m²", "ml", "forfait", "kg"];
+const STATUS_OPTIONS: FactureStatus[] = ["brouillon", "envoyée", "en retard", "payée"];
 
 const newLigne = (): Ligne => ({
   id: crypto.randomUUID(),
@@ -63,36 +74,17 @@ const newLigne = (): Ligne => ({
 const fmt = (n: number) =>
   n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const todayISO = () => new Date().toISOString().split("T")[0];
-const in30DaysISO = () => {
-  const d = new Date();
-  d.setDate(d.getDate() + 30);
-  return d.toISOString().split("T")[0];
-};
-
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function NewDevisModal({ onClose, onCreated }: Props) {
-  // Client list (mutable so newly created clients appear immediately)
-  const [clients, setClients] = useState<ClientOption[]>(FALLBACK_CLIENTS);
+export default function EditFactureModal({ factureUuid, factureNumero, onClose, onSaved }: Props) {
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Charge les vrais clients depuis la DB
-  useEffect(() => {
-    fetch("/api/clients")
-      .then((r) => r.json())
-      .then((data) => {
-        if (!data.clients?.length) return;
-        const opts: ClientOption[] = data.clients.map((c: { name: string; email: string; type: string; _uuid?: string; id: number }) => ({
-          id: String(c.id),
-          dbId: c._uuid,
-          label: c.name,
-          email: c.email || undefined,
-          type: c.type === "Professionnel" || c.type === "Public" ? "professionnel" : "particulier",
-        }));
-        setClients(opts);
-      })
-      .catch(() => {/* garde FALLBACK_CLIENTS */});
-  }, []);
+  // Clients
+  const [clients, setClients] = useState<ClientOption[]>([]);
   const [clientSearch, setClientSearch] = useState("");
   const [selectedClient, setSelectedClient] = useState<ClientOption | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -101,33 +93,98 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
   const [newClientEmail, setNewClientEmail] = useState("");
   const [newClientType, setNewClientType] = useState<"particulier" | "professionnel">("particulier");
 
-  // Devis metadata
+  // Champs
   const [objet, setObjet] = useState("");
-  const [dateEmission, setDateEmission] = useState(todayISO());
-  const [dateValidite, setDateValidite] = useState(in30DaysISO());
+  const [statut, setStatut] = useState<FactureStatus>("brouillon");
+  const [dateEmission, setDateEmission] = useState("");
+  const [dateEcheance, setDateEcheance] = useState("");
   const [notes, setNotes] = useState("");
   const [conditionsPaiement, setConditionsPaiement] = useState("");
   const [remisePercent, setRemisePercent] = useState(0);
   const [acompte, setAcompte] = useState(0);
-
-  // Lines
   const [lignes, setLignes] = useState<Ligne[]>([newLigne()]);
 
-  // UI
-  const [saving, setSaving] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  // ── Chargement initial ────────────────────────────────────────────────────
 
-  // ── Filtered client list ──────────────────────────────────────────────────
+  useEffect(() => {
+    Promise.all([
+      fetch(`/api/factures/${factureUuid}`).then((r) => r.json()),
+      fetch("/api/clients").then((r) => r.json()).catch(() => ({ clients: [] })),
+    ])
+      .then(([factureData, clientsData]) => {
+        if (factureData.error) {
+          setLoadError(factureData.error);
+          setLoading(false);
+          return;
+        }
+
+        const f = factureData.facture;
+
+        // Pré-remplir les champs
+        setObjet(f.objet ?? "");
+        setStatut((f.statut as FactureStatus) ?? "brouillon");
+        setDateEmission(f.date_emission ?? "");
+        setDateEcheance(f.date_echeance ?? "");
+        setNotes(f.notes ?? "");
+        setConditionsPaiement(f.conditions_paiement ?? "");
+        setRemisePercent(Number(f.remise_percent ?? 0));
+        setAcompte(Number(f.acompte ?? 0));
+        setLignes(
+          Array.isArray(f.lignes) && f.lignes.length > 0
+            ? f.lignes.map((l: Ligne) => ({ ...l, id: l.id || crypto.randomUUID() }))
+            : [newLigne()],
+        );
+
+        // Construire la liste clients
+        const apiClients: ClientOption[] = (clientsData.clients ?? []).map(
+          (c: { id: number; name: string; email: string; type: string; _uuid?: string }) => ({
+            id: String(c.id),
+            dbId: c._uuid,
+            label: c.name,
+            email: c.email || undefined,
+            type:
+              c.type === "Professionnel" || c.type === "Public"
+                ? "professionnel"
+                : "particulier",
+          }),
+        );
+
+        // S'assurer que le client actuel est dans la liste et pré-sélectionné
+        if (f.clients) {
+          const c = f.clients;
+          const clientName = c.prenom
+            ? `${c.prenom} ${c.nom}`
+            : c.raison_sociale || c.nom;
+          const currentOption: ClientOption = {
+            id: f.client_id,
+            dbId: f.client_id,
+            label: clientName,
+            email: c.email || undefined,
+            type: c.type === "professionnel" ? "professionnel" : "particulier",
+          };
+          if (!apiClients.some((opt) => opt.dbId === f.client_id)) {
+            apiClients.unshift(currentOption);
+          }
+          setSelectedClient(currentOption);
+        }
+
+        setClients(apiClients);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error("[EditFactureModal] load error", err);
+        setLoadError("Impossible de charger les données de la facture");
+        setLoading(false);
+      });
+  }, [factureUuid]);
+
+  // ── Clients ───────────────────────────────────────────────────────────────
 
   const filteredClients = useMemo(
-    () =>
-      clients.filter((c) =>
-        c.label.toLowerCase().includes(clientSearch.toLowerCase())
-      ),
-    [clients, clientSearch]
+    () => clients.filter((c) => c.label.toLowerCase().includes(clientSearch.toLowerCase())),
+    [clients, clientSearch],
   );
 
-  // Confirm inline new client → add to list + auto-select
   const confirmNewClient = () => {
     const nom = newClientNom.trim();
     if (!nom) return;
@@ -145,25 +202,26 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
     setErrors((e) => ({ ...e, client: "" }));
   };
 
-  // ── Totals ────────────────────────────────────────────────────────────────
+  // ── Totaux recalculés en temps réel ──────────────────────────────────────
 
   const totals = useMemo(() => {
     const htBrut  = lignes.reduce((s, l) => s + l.quantite * l.prix_unitaire, 0);
     const remise  = htBrut * (remisePercent / 100);
     const htNet   = htBrut - remise;
     const df      = 1 - remisePercent / 100;
-    const tva     = lignes.reduce((s, l) => s + l.quantite * l.prix_unitaire * df * (l.tva / 100), 0);
+    const tva     = lignes.reduce(
+      (s, l) => s + l.quantite * l.prix_unitaire * df * (l.tva / 100),
+      0,
+    );
     const ttc     = htNet + tva;
     const restant = Math.max(0, ttc - acompte);
     return { htBrut, remise, htNet, tva, ttc, restant };
   }, [lignes, remisePercent, acompte]);
 
-  // ── Line helpers ──────────────────────────────────────────────────────────
+  // ── Lignes ────────────────────────────────────────────────────────────────
 
   const updateLigne = (id: string, field: keyof Ligne, value: string | number) => {
-    setLignes((prev) =>
-      prev.map((l) => (l.id === id ? { ...l, [field]: value } : l))
-    );
+    setLignes((prev) => prev.map((l) => (l.id === id ? { ...l, [field]: value } : l)));
   };
 
   const removeLigne = (id: string) => {
@@ -174,43 +232,30 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
 
   const validate = () => {
     const e: Record<string, string> = {};
-    const clientName = selectedClient?.label;
-    if (!clientName) e.client = "Sélectionnez ou créez un client";
+    if (!selectedClient?.label) e.client = "Sélectionnez ou créez un client";
     if (!objet.trim()) e.objet = "L'objet est requis";
     if (lignes.some((l) => !l.description.trim())) e.lignes = "Toutes les lignes doivent avoir une description";
     setErrors(e);
     return Object.keys(e).length === 0;
   };
 
-  // ── Save ──────────────────────────────────────────────────────────────────
+  // ── Sauvegarde ────────────────────────────────────────────────────────────
 
   const handleSave = async () => {
     if (!validate()) return;
-
     setSaving(true);
+    setSaveError(null);
 
-    const clientLabel = selectedClient!.label;
-
-    const numero = `DV-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`;
-    const dateFormatted = new Date(dateEmission).toLocaleDateString("fr-FR", {
-      day: "2-digit", month: "short", year: "numeric",
-    });
-    const validiteFormatted = new Date(dateValidite).toLocaleDateString("fr-FR", {
-      day: "2-digit", month: "short", year: "numeric",
-    });
-
-    // Attempt Supabase save
     try {
-      await fetch("/api/devis", {
-        method: "POST",
+      const res = await fetch(`/api/factures/${factureUuid}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          client_nom: clientLabel,
-          client_email: selectedClient?.email,
           client_id: selectedClient?.dbId ?? null,
           objet: objet.trim(),
+          statut,
           date_emission: dateEmission,
-          date_validite: dateValidite,
+          date_echeance: dateEcheance,
           lignes: lignes.map((l) => ({
             id: l.id,
             description: l.description,
@@ -224,27 +269,69 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
           acompte,
           notes: notes.trim() || null,
           conditions_paiement: conditionsPaiement.trim() || null,
-          numero,
         }),
       });
-    } catch {
-      // Supabase not configured — continue with local state
+
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}));
+        throw new Error(b?.error || `Erreur serveur (${res.status})`);
+      }
+
+      const result = await res.json();
+      const saved = result.facture;
+
+      onSaved({
+        id: factureNumero,
+        client: selectedClient!.label,
+        objet: objet.trim(),
+        montant: saved.montant ?? `${fmt(totals.htNet)} €`,
+        tva: saved.tva ?? `${fmt(totals.tva)} €`,
+        total: saved.total ?? `${fmt(totals.ttc)} €`,
+        date: saved.date ?? "",
+        echeance: saved.echeance ?? "",
+        status: statut,
+      });
+      onClose();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Erreur inconnue");
+    } finally {
+      setSaving(false);
     }
-
-    setSaving(false);
-
-    onCreated({
-      id: numero,
-      client: clientLabel,
-      objet: objet.trim(),
-      montant: `${fmt(totals.ttc)} €`,
-      date: dateFormatted,
-      validite: validiteFormatted,
-      status: "brouillon",
-    });
   };
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+  // ── États de chargement / erreur ─────────────────────────────────────────
+
+  if (loading) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+        <div className="relative z-10 w-full max-w-3xl h-64 flex flex-col items-center justify-center bg-surface border border-surface-border rounded-2xl shadow-card gap-3">
+          <Loader2 className="w-6 h-6 text-primary animate-spin" />
+          <p className="text-sm text-text-muted">Chargement de la facture…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+        <div className="relative z-10 w-full max-w-sm flex flex-col items-center justify-center bg-surface border border-surface-border rounded-2xl shadow-card p-8 gap-4">
+          <AlertCircle className="w-8 h-8 text-status-error" />
+          <p className="text-sm text-text-primary text-center">{loadError}</p>
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-xl bg-surface-active text-sm text-text-muted hover:text-text-primary transition-colors"
+          >
+            Fermer
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Rendu principal ───────────────────────────────────────────────────────
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -254,8 +341,8 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-surface-border flex-shrink-0">
           <div>
-            <h2 className="text-lg font-bold text-text-primary">Nouveau devis</h2>
-            <p className="text-xs text-text-muted mt-0.5">Remplissez les informations ci-dessous</p>
+            <h2 className="text-lg font-bold text-text-primary">Modifier la facture</h2>
+            <p className="text-xs text-text-muted font-mono mt-0.5">{factureNumero}</p>
           </div>
           <button
             onClick={onClose}
@@ -265,7 +352,7 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
           </button>
         </div>
 
-        {/* Scrollable body */}
+        {/* Body */}
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-6">
 
           {/* ── Client ── */}
@@ -281,7 +368,7 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
                   onClick={() => setDropdownOpen((v) => !v)}
                   className={clsx(
                     "input-field w-full text-sm flex items-center justify-between text-left",
-                    errors.client && "border-status-error"
+                    errors.client && "border-status-error",
                   )}
                 >
                   <span className={selectedClient ? "text-text-primary" : "text-text-muted"}>
@@ -303,27 +390,25 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
                     </div>
                     {filteredClients.length === 0 ? (
                       <p className="text-xs text-text-muted text-center py-3">Aucun résultat</p>
-                    ) : (
-                      filteredClients.map((c) => (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => {
-                            setSelectedClient(c);
-                            setDropdownOpen(false);
-                            setClientSearch("");
-                            setErrors((e) => ({ ...e, client: "" }));
-                          }}
-                          className="w-full flex items-center justify-between px-3 py-2.5 text-sm hover:bg-surface-active transition-colors text-left"
-                        >
-                          <div>
-                            <p className="font-medium text-text-primary">{c.label}</p>
-                            {c.email && <p className="text-xs text-text-muted">{c.email}</p>}
-                          </div>
-                          {selectedClient?.id === c.id && <Check className="w-4 h-4 text-primary" />}
-                        </button>
-                      ))
-                    )}
+                    ) : filteredClients.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedClient(c);
+                          setDropdownOpen(false);
+                          setClientSearch("");
+                          setErrors((e) => ({ ...e, client: "" }));
+                        }}
+                        className="w-full flex items-center justify-between px-3 py-2.5 text-sm hover:bg-surface-active transition-colors text-left"
+                      >
+                        <div>
+                          <p className="font-medium text-text-primary">{c.label}</p>
+                          {c.email && <p className="text-xs text-text-muted">{c.email}</p>}
+                        </div>
+                        {selectedClient?.id === c.id && <Check className="w-4 h-4 text-primary" />}
+                      </button>
+                    ))}
                     <div className="p-2 border-t border-surface-border">
                       <button
                         type="button"
@@ -359,7 +444,7 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
                         "px-3 py-1.5 rounded-lg text-xs font-medium border transition-all capitalize",
                         newClientType === t
                           ? "border-primary/30 bg-primary/10 text-primary"
-                          : "border-surface-border text-text-muted hover:text-text-primary"
+                          : "border-surface-border text-text-muted hover:text-text-primary",
                       )}
                     >
                       {t}
@@ -402,10 +487,22 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
             )}
           </section>
 
-          {/* ── Metadata ── */}
+          {/* ── Statut + Métadonnées ── */}
           <section className="grid grid-cols-3 gap-4">
-            <div className="col-span-3">
-              <label className="field-label">Objet du devis</label>
+            <div>
+              <label className="field-label">Statut</label>
+              <select
+                value={statut}
+                onChange={(e) => setStatut(e.target.value as FactureStatus)}
+                className="input-field w-full text-sm"
+              >
+                {STATUS_OPTIONS.map((s) => (
+                  <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+                ))}
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className="field-label">Objet de la facture</label>
               <input
                 value={objet}
                 onChange={(e) => { setObjet(e.target.value); setErrors((er) => ({ ...er, objet: "" })); }}
@@ -424,37 +521,40 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
               />
             </div>
             <div>
-              <label className="field-label">Date de validité</label>
+              <label className="field-label">Date d&apos;échéance</label>
               <input
                 type="date"
-                value={dateValidite}
-                onChange={(e) => setDateValidite(e.target.value)}
+                value={dateEcheance}
+                onChange={(e) => setDateEcheance(e.target.value)}
                 className="input-field w-full text-sm"
               />
             </div>
           </section>
 
-          {/* ── Lines ── */}
+          {/* ── Lignes ── */}
           <section>
             <div className="flex items-center justify-between mb-2">
-              <label className="field-label mb-0">Lignes du devis</label>
+              <label className="field-label mb-0">Lignes de la facture</label>
               {errors.lignes && <p className="text-xs text-status-error">{errors.lignes}</p>}
             </div>
 
             <div className="rounded-xl border border-surface-border overflow-hidden">
-              {/* Table header */}
+              {/* En-tête */}
               <div className="grid grid-cols-[1fr_60px_70px_90px_65px_80px_32px] gap-2 px-3 py-2 bg-background border-b border-surface-border">
                 {["Description", "Qté", "Unité", "PU HT", "TVA", "Total HT", ""].map((h) => (
                   <span key={h} className="text-[10px] font-semibold text-text-muted uppercase tracking-wider">{h}</span>
                 ))}
               </div>
 
-              {/* Rows */}
+              {/* Lignes */}
               <div className="divide-y divide-surface-border">
                 {lignes.map((l) => {
                   const totalHT = l.quantite * l.prix_unitaire;
                   return (
-                    <div key={l.id} className="grid grid-cols-[1fr_60px_70px_90px_65px_80px_32px] gap-2 px-3 py-2 items-center">
+                    <div
+                      key={l.id}
+                      className="grid grid-cols-[1fr_60px_70px_90px_65px_80px_32px] gap-2 px-3 py-2 items-center"
+                    >
                       <input
                         value={l.description}
                         onChange={(e) => updateLigne(l.id, "description", e.target.value)}
@@ -507,7 +607,7 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
                 })}
               </div>
 
-              {/* Add line */}
+              {/* Ajouter une ligne */}
               <div className="px-3 py-2 border-t border-surface-border">
                 <button
                   type="button"
@@ -553,7 +653,7 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
             </div>
           </section>
 
-          {/* ── Totals ── */}
+          {/* ── Totaux ── */}
           <section className="flex justify-end">
             <div className="w-72 space-y-1.5">
               <div className="flex justify-between text-sm text-text-secondary">
@@ -623,7 +723,7 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
               value={conditionsPaiement}
               onChange={(e) => setConditionsPaiement(e.target.value)}
               rows={2}
-              placeholder="Ex : Paiement à 30 jours fin de mois. Acompte de 30% à la commande."
+              placeholder="Ex : Paiement à 30 jours. Pénalités de retard : 3× taux légal."
               className="input-field w-full text-sm resize-none"
             />
           </section>
@@ -631,13 +731,16 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
 
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-surface-border flex-shrink-0">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl text-sm text-text-muted hover:text-text-primary hover:bg-surface-active transition-colors"
-          >
-            Annuler
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl text-sm text-text-muted hover:text-text-primary hover:bg-surface-active transition-colors"
+            >
+              Annuler
+            </button>
+            {saveError && <p className="text-xs text-status-error">{saveError}</p>}
+          </div>
           <button
             type="button"
             onClick={handleSave}
@@ -647,7 +750,7 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
             {saving ? (
               <><Loader2 className="w-4 h-4 animate-spin" /> Enregistrement…</>
             ) : (
-              <><Check className="w-4 h-4" /> Enregistrer le devis</>
+              <><Check className="w-4 h-4" /> Enregistrer les modifications</>
             )}
           </button>
         </div>

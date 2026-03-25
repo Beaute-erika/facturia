@@ -67,12 +67,31 @@ export async function POST(req: NextRequest) {
       date_emission,
       date_validite,
       lignes,
-      montant_ht,
-      montant_tva,
-      montant_ttc,
       notes,
       numero,
+      conditions_paiement,
+      remise_percent: remisePercentRaw,
+      acompte: acompteRaw,
     } = body;
+
+    // Calcul côté serveur
+    const remisePercent = Math.min(100, Math.max(0, Number(remisePercentRaw ?? 0)));
+    const acompte = Math.max(0, Number(acompteRaw ?? 0));
+    const htBrut = (lignes ?? []).reduce(
+      (s: number, l: { quantite: number; prix_unitaire: number }) =>
+        s + Number(l.quantite) * Number(l.prix_unitaire),
+      0,
+    );
+    const remise = htBrut * (remisePercent / 100);
+    const htNet  = htBrut - remise;
+    const df     = 1 - remisePercent / 100;
+    const montant_tva = (lignes ?? []).reduce(
+      (s: number, l: { quantite: number; prix_unitaire: number; tva: number }) =>
+        s + Number(l.quantite) * Number(l.prix_unitaire) * df * (Number(l.tva) / 100),
+      0,
+    );
+    const montant_ht  = htNet;
+    const montant_ttc = htNet + montant_tva;
 
     if (!client_nom || !objet || !numero) {
       return NextResponse.json({ error: "Champs requis manquants" }, { status: 400 });
@@ -160,6 +179,9 @@ export async function POST(req: NextRequest) {
         montant_tva,
         montant_ttc,
         notes: notes || null,
+        conditions_paiement: conditions_paiement || null,
+        remise_percent: remisePercent,
+        acompte,
         chorus_pro: false,
         pdf_url: null,
       })
