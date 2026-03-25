@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { X, Plus, Trash2, User, UserPlus, ChevronDown, Loader2, Check } from "lucide-react";
+import { X, Plus, Trash2, User, UserPlus, ChevronDown, Loader2, Check, Building2 } from "lucide-react";
 import { clsx } from "clsx";
 
 interface ClientOption {
@@ -31,7 +31,8 @@ export interface NewFactureResult {
   date: string;
   echeance: string;
   status: "brouillon";
-  chorus: false;
+  chorus: boolean;
+  _uuid?: string;
 }
 
 interface Props {
@@ -103,6 +104,7 @@ export default function NewFactureModal({ onClose, onCreated }: Props) {
   const [remisePercent, setRemisePercent] = useState(0);
   const [acompte, setAcompte] = useState(0);
   const [lignes, setLignes] = useState<Ligne[]>([newLigne()]);
+  const [chorusPro, setChorusPro] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -192,6 +194,7 @@ export default function NewFactureModal({ onClose, onCreated }: Props) {
           acompte,
           notes: notes.trim() || null,
           conditions_paiement: conditionsPaiement.trim() || null,
+          chorus_pro: chorusPro,
           numero,
         }),
       });
@@ -217,7 +220,7 @@ export default function NewFactureModal({ onClose, onCreated }: Props) {
       date: dateFormatted,
       echeance: echeanceFormatted,
       status: "brouillon",
-      chorus: false,
+      chorus: chorusPro,
     };
     onCreated(result);
     onClose();
@@ -473,6 +476,32 @@ export default function NewFactureModal({ onClose, onCreated }: Props) {
           <section>
             <label className="field-label">Conditions de paiement (optionnel)</label>
             <textarea value={conditionsPaiement} onChange={(e) => setConditionsPaiement(e.target.value)} rows={2} placeholder="Ex : Paiement à 30 jours. Pénalités de retard : 3× taux légal." className="input-field w-full text-sm resize-none" />
+          </section>
+
+          {/* Chorus Pro */}
+          <section>
+            <button
+              type="button"
+              onClick={() => setChorusPro((v) => !v)}
+              className={clsx(
+                "w-full flex items-center gap-3 p-3 rounded-xl border transition-colors text-left",
+                chorusPro
+                  ? "border-status-info/40 bg-status-info/5 text-status-info"
+                  : "border-surface-border hover:border-surface-active text-text-muted hover:text-text-primary",
+              )}
+            >
+              <Building2 className="w-4 h-4 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">Facture Chorus Pro</p>
+                <p className="text-xs opacity-70 mt-0.5">Dépôt sur la plateforme publique Chorus Pro (secteur public)</p>
+              </div>
+              <div className={clsx(
+                "w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors",
+                chorusPro ? "bg-status-info border-status-info" : "border-surface-active",
+              )}>
+                {chorusPro && <Check className="w-3 h-3 text-white" />}
+              </div>
+            </button>
           </section>
         </div>
 

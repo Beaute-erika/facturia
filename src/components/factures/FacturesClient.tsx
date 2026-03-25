@@ -975,6 +975,17 @@ export default function FacturesClient() {
                             </button>
 
                             {/* Bouton Chorus Pro dynamique */}
+                            {(() => {
+                              // [DIAG] log chorus conditions pour chaque ligne
+                              if (f.chorus) {
+                                const retries = f.chorus_retry_count ?? 0;
+                                const isRejetee = f.chorus_status === "rejetee";
+                                const isAcceptee = f.chorus_status === "acceptee";
+                                const retryBlocked = isRejetee && retries >= CHORUS_MAX_RETRIES;
+                                console.log(`[ChorusBtn] ${f.id} chorus=${f.chorus} status=${f.status} chorus_status=${f.chorus_status} retries=${retries} retryBlocked=${retryBlocked} isAcceptee=${isAcceptee} uuid=${f._uuid}`);
+                              }
+                              return null;
+                            })()}
                             {f.chorus && f.status !== "payée" && (() => {
                               const retries = f.chorus_retry_count ?? 0;
                               const isRejetee = f.chorus_status === "rejetee";

@@ -28,6 +28,7 @@ export async function POST(req: Request) {
       client_nom, client_email, client_id, client_type,
       objet, date_emission, date_echeance, lignes, notes, numero,
       conditions_paiement,
+      chorus_pro,
       remise_percent: remisePercentRaw,
       acompte: acompteRaw,
     } = body;
@@ -106,6 +107,7 @@ export async function POST(req: Request) {
         montant_ttc,
         notes: notes ?? null,
         conditions_paiement: conditions_paiement ?? null,
+        chorus_pro: chorus_pro === true,
         remise_percent: remisePercent,
         acompte,
         statut: "brouillon",
@@ -121,6 +123,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       facture: {
         id: data.numero,
+        _uuid: data.id,
         client: clientLabel,
         objet: data.objet,
         montant: formatEur(data.montant_ht),
@@ -129,8 +132,9 @@ export async function POST(req: Request) {
         date: formatDate(data.date_emission),
         echeance: formatDate(data.date_echeance),
         status: "brouillon",
-        chorus: false,
-        _uuid: data.id,
+        chorus: chorus_pro === true,
+        chorus_status: null,
+        chorus_retry_count: 0,
       },
     }, { status: 201 });
   } catch (err) {
