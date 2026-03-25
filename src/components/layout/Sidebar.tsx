@@ -178,11 +178,18 @@ export default function Sidebar({ onClose }: SidebarProps) {
           <span className="flex-1 text-sm font-medium text-left">Agent IA</span>
           <span className="text-[10px] font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded-md">BETA</span>
         </button>
-        <button className="sidebar-item w-full">
-          <Building2 className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={2} />
+        <Link
+          href="/factures"
+          onClick={() => {
+            console.log("[SidebarChorus] click → /factures");
+            onClose?.();
+          }}
+          className={clsx("sidebar-item", pathname === "/factures" && "active")}
+        >
+          <Building2 className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={pathname === "/factures" ? 2.5 : 2} />
           <span className="flex-1 text-sm font-medium text-left">Chorus Pro</span>
           <span className="w-2 h-2 rounded-full bg-status-success" />
-        </button>
+        </Link>
       </nav>
 
       {/* Bottom section */}

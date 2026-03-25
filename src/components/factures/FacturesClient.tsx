@@ -643,8 +643,8 @@ export default function FacturesClient() {
               icon={Building2}
               size="sm"
               onClick={() => {
-                console.log("[FacturesClient] chorus header click — scroll vers dashboard");
-                chorusDashboardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                console.log("[HeaderChorus] click → scroll vers dashboard");
+                chorusDashboardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
               }}
             >
               Chorus Pro
