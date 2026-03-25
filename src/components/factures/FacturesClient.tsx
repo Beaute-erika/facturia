@@ -99,7 +99,7 @@ export default function FacturesClient() {
   const [editModalTarget, setEditModalTarget] = useState<{ uuid: string; numero: string } | null>(null);
   const [sendingChorusId, setSendingChorusId] = useState<string | null>(null);
   const [chorusSyncing, setChorusSyncing] = useState(false);
-  const [lastNotifCheck, setLastNotifCheck] = useState<string | null>(null);
+  const [, setLastNotifCheck] = useState<string | null>(null);
 
   // Snapshot ref — type élargi pour compatibilité avec useAutosave
   const editingSnapshotRef = useRef<Record<string, unknown> | null>(null);

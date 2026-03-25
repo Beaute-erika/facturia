@@ -202,7 +202,7 @@ export default function ChorusDashboard() {
       {stats.total_envoyes > 0 && (
         <div className="px-5 py-3 border-t border-surface-border">
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-xs text-text-muted font-medium">Taux d'acceptation</span>
+            <span className="text-xs text-text-muted font-medium">Taux d&apos;acceptation</span>
             <span className={clsx(
               "text-xs font-bold font-mono",
               stats.taux_acceptation >= 80
