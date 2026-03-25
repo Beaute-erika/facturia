@@ -212,7 +212,7 @@ export async function POST(req: NextRequest) {
     const allResults: EntrepriseResult[] = [];
     const MAX_PAGES = 3;
 
-    for (const dept of deptSet) {
+    for (const dept of Array.from(deptSet)) {
       for (let page = 1; page <= MAX_PAGES; page++) {
         const url = `https://recherche-entreprises.api.gouv.fr/search?q=${encodeURIComponent(
           metier
