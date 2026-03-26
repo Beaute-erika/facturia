@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { X, Plus, Trash2, User, UserPlus, ChevronDown, Loader2, Check, Building2 } from "lucide-react";
+import { X, Plus, Trash2, User, UserPlus, ChevronDown, Loader2, Check, Building2, Package } from "lucide-react";
+import ServicePickerModal from "@/components/services/ServicePickerModal";
+import type { ServiceRow } from "@/lib/database.types";
 import { clsx } from "clsx";
 
 interface ClientOption {
@@ -108,6 +110,7 @@ export default function NewFactureModal({ onClose, onCreated }: Props) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showServicePicker, setShowServicePicker] = useState(false);
 
   const filteredClients = useMemo(
     () => clients.filter((c) => c.label.toLowerCase().includes(clientSearch.toLowerCase())),
@@ -148,6 +151,20 @@ export default function NewFactureModal({ onClose, onCreated }: Props) {
 
   const removeLigne = (id: string) => {
     setLignes((prev) => (prev.length > 1 ? prev.filter((l) => l.id !== id) : prev));
+  };
+
+  const addFromService = (service: ServiceRow) => {
+    setLignes((prev) => [
+      ...prev,
+      {
+        id:            crypto.randomUUID(),
+        description:   service.description ? `${service.name}\n${service.description}` : service.name,
+        quantite:      1,
+        unite:         "u",
+        prix_unitaire: service.price_ht,
+        tva:           10,
+      },
+    ]);
   };
 
   const validate = () => {
@@ -227,6 +244,7 @@ export default function NewFactureModal({ onClose, onCreated }: Props) {
   };
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
@@ -383,11 +401,18 @@ export default function NewFactureModal({ onClose, onCreated }: Props) {
                   );
                 })}
               </div>
-              <div className="px-3 py-2 border-t border-surface-border">
+              <div className="px-3 py-2 border-t border-surface-border flex items-center gap-4">
                 <button type="button" onClick={() => setLignes((prev) => [...prev, newLigne()])}
                   className="flex items-center gap-1.5 text-xs text-primary hover:text-primary-400 font-medium transition-colors"
                 >
                   <Plus className="w-3.5 h-3.5" /> Ajouter une ligne
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowServicePicker(true)}
+                  className="flex items-center gap-1.5 text-xs text-text-muted hover:text-primary font-medium transition-colors"
+                >
+                  <Package className="w-3.5 h-3.5" /> Depuis mes services
                 </button>
               </div>
             </div>
@@ -521,5 +546,13 @@ export default function NewFactureModal({ onClose, onCreated }: Props) {
         </div>
       </div>
     </div>
+
+    {showServicePicker && (
+      <ServicePickerModal
+        onClose={() => setShowServicePicker(false)}
+        onSelect={addFromService}
+      />
+    )}
+    </>
   );
 }

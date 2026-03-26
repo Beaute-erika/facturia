@@ -39,7 +39,11 @@ export type UserRow = {
   delai_paiement: string;
   iban: string | null;
   bic: string | null;
-  plan: "starter" | "pro" | "business";
+  plan:                    "starter" | "pro" | "business";
+  stripe_customer_id:      string | null;
+  stripe_sub_id:           string | null;
+  subscription_status:     string | null;
+  subscription_period_end: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -224,6 +228,12 @@ export type LeadRow = {
   ville: string | null;
   code_postal: string | null;
   telephone: string | null;
+  phone_source: string | null;
+  phone_confidence: number | null;
+  phone_match_method: string | null;
+  phone_secondary: string | null;
+  phone_page_url: string | null;
+  google_places_id: string | null;
   email: string | null;
   site_web: string | null;
   siret: string | null;
@@ -234,6 +244,17 @@ export type LeadRow = {
   saved: boolean;
   raw_data: Json | null;
   created_at: string;
+}
+
+export type ServiceRow = {
+  id:          string;
+  user_id:     string;
+  name:        string;
+  description: string | null;
+  price_ht:    number;
+  category:    string | null;
+  created_at:  string;
+  updated_at:  string;
 }
 
 export type AutomatisationConfig = {
@@ -617,9 +638,85 @@ export type Database = {
           }
         ];
       };
+      agent_conversations: {
+        Row: {
+          id:           string;
+          user_id:      string;
+          context_type: string;
+          context_id:   string;
+          created_at:   string;
+          updated_at:   string;
+        };
+        Insert: {
+          id?:          string;
+          user_id:      string;
+          context_type: string;
+          context_id?:  string;
+          created_at?:  string;
+          updated_at?:  string;
+        };
+        Update: Partial<{ context_type: string; context_id: string; updated_at: string }>;
+        Relationships: [];
+      };
+      agent_messages: {
+        Row: {
+          id:              string;
+          conversation_id: string;
+          role:            "user" | "assistant";
+          content:         string;
+          created_at:      string;
+        };
+        Insert: {
+          id?:             string;
+          conversation_id: string;
+          role:            "user" | "assistant";
+          content:         string;
+          created_at?:     string;
+        };
+        Update: Partial<{ content: string }>;
+        Relationships: [];
+      };
+      agent_usage: {
+        Row: {
+          id:            string;
+          user_id:       string;
+          year_month:    string;
+          message_count: number;
+          updated_at:    string;
+        };
+        Insert: {
+          id?:           string;
+          user_id:       string;
+          year_month:    string;
+          message_count?: number;
+          updated_at?:   string;
+        };
+        Update: Partial<{ message_count: number; updated_at: string }>;
+        Relationships: [];
+      };
+      services: {
+        Row: ServiceRow;
+        Insert: {
+          id?:         string;
+          user_id:     string;
+          name:        string;
+          description?: string | null;
+          price_ht?:   number;
+          category?:   string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Omit<ServiceRow, "id" | "created_at">>;
+        Relationships: [];
+      };
     };
     Views: Record<never, never>;
-    Functions: Record<never, never>;
+    Functions: {
+      increment_agent_usage: {
+        Args: { p_user_id: string; p_year_month: string };
+        Returns: number;
+      };
+    };
     Enums: Record<never, never>;
     CompositeTypes: Record<never, never>;
   };

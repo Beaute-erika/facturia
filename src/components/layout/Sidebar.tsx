@@ -5,10 +5,11 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   LayoutDashboard, Users, FileText, Receipt, HardHat, BarChart3,
-  Settings, Zap, Building2, ChevronRight, LogOut, Sparkles, X, Target,
+  Settings, Zap, Building2, ChevronRight, LogOut, Sparkles, X, Target, Package,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { createBrowserClient } from "@/lib/supabase-client";
+import { useAgent } from "@/components/agent/AgentContext";
 
 interface SidebarProps {
   onClose?: () => void;
@@ -33,6 +34,7 @@ const navItems = [
   { label: "Devis",     href: "/devis",    icon: FileText, countKey: "devis"    as const, badgeType: "warning" as const },
   { label: "Factures",  href: "/factures", icon: Receipt,  countKey: "factures" as const, badgeType: "error"   as const },
   { label: "Chantiers", href: "/chantiers", icon: HardHat },
+  { label: "Services",  href: "/services",  icon: Package },
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
   { label: "Leads", href: "/leads", icon: Target },
 ];
@@ -49,6 +51,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
   const pathname = usePathname();
   const [counts, setCounts]   = useState<Counts>({ clients: 0, devis: 0, factures: 0 });
   const [profile, setProfile] = useState<Profile | null>(null);
+  const { openAgent } = useAgent();
 
   useEffect(() => {
     const supabase = createBrowserClient();
@@ -171,7 +174,10 @@ export default function Sidebar({ onClose }: SidebarProps) {
         <div className="pt-4 pb-1">
           <p className="px-3 mb-2 text-[10px] font-semibold text-text-muted uppercase tracking-widest">Intelligence</p>
         </div>
-        <button className="sidebar-item w-full group">
+        <button
+          className="sidebar-item w-full group"
+          onClick={() => { openAgent({ type: "general" }); onClose?.(); }}
+        >
           <div className="w-[18px] h-[18px] flex-shrink-0 relative">
             <Sparkles className="w-full h-full" strokeWidth={2} />
             <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-primary rounded-full border border-background-secondary animate-pulse" />
