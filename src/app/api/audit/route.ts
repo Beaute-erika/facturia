@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Temporary production audit endpoint — measures real contribution of
  * official_registry, OSM, and website scraping in live environment.
@@ -302,7 +303,7 @@ async function runScenario(adresse: string, metier: string, rayon_km: number): P
   const totalCompanies = leads.length;
 
   // OSM enrichment
-  for (const lead of leads) {
+  for (const lead of leads as any[]) {
     const match = findPhoneMatch(lead, osmEntries, metier);
     if (!match) continue;
     lead.telephone = match.phone; lead.phone_source = "openstreetmap"; lead.phone_confidence = match.confidence; lead.phone_match_method = match.method; lead.phone_secondary = match.secondary;
