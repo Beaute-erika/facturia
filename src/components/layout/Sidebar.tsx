@@ -4,12 +4,18 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  LayoutDashboard, Users, FileText, Receipt, HardHat, BarChart3,
-  Settings, Zap, Building2, ChevronRight, LogOut, Sparkles, X, Target, Package,
+  LayoutDashboard, Users, HardHat, BarChart3,
+  Settings, Zap, Building2, ChevronRight, LogOut, Sparkles, X,
+  Target, Package,
+  // Documents group
+  Files, Receipt, FileText, FilePlus2, ClipboardList, Truck, FileMinus, Repeat,
+  ChevronDown,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { createBrowserClient } from "@/lib/supabase-client";
 import { useAgent } from "@/components/agent/AgentContext";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface SidebarProps {
   onClose?: () => void;
@@ -28,38 +34,75 @@ interface Profile {
   ville: string | null;
 }
 
-const navItems = [
-  { label: "Dashboard", href: "/app", icon: LayoutDashboard },
-  { label: "Clients",   href: "/clients",  icon: Users,    countKey: "clients"  as const },
-  { label: "Devis",     href: "/devis",    icon: FileText, countKey: "devis"    as const, badgeType: "warning" as const },
-  { label: "Factures",  href: "/factures", icon: Receipt,  countKey: "factures" as const, badgeType: "error"   as const },
-  { label: "Chantiers", href: "/chantiers", icon: HardHat },
-  { label: "Services",  href: "/services",  icon: Package },
-  { label: "Analytics", href: "/analytics", icon: BarChart3 },
-  { label: "Leads", href: "/leads", icon: Target },
+interface NavItem {
+  label: string;
+  href: string;
+  icon: React.ElementType;
+  countKey?: keyof Counts;
+  badgeType?: keyof typeof badgeColors;
+}
+
+// ─── Nav arrays ───────────────────────────────────────────────────────────────
+
+const topNavItems: NavItem[] = [
+  { label: "Dashboard", href: "/app",     icon: LayoutDashboard },
+  { label: "Clients",   href: "/clients", icon: Users, countKey: "clients" },
 ];
 
-const bottomItems = [{ label: "Paramètres", href: "/settings", icon: Settings }];
+const documentsNavItems: NavItem[] = [
+  { label: "Factures",          href: "/factures",             icon: Receipt,       countKey: "factures", badgeType: "error"   },
+  { label: "Devis",             href: "/devis",                icon: FileText,      countKey: "devis",    badgeType: "warning" },
+  { label: "Pro forma",         href: "/factures-pro-forma",   icon: FilePlus2   },
+  { label: "Bons de commande",  href: "/bons-de-commande",     icon: ClipboardList },
+  { label: "Bons de livraison", href: "/bons-de-livraison",    icon: Truck        },
+  { label: "Avoirs",            href: "/avoirs",               icon: FileMinus    },
+  { label: "Récurrentes",       href: "/factures-recurrentes", icon: Repeat       },
+];
+
+const mainNavItems: NavItem[] = [
+  { label: "Chantiers", href: "/chantiers", icon: HardHat   },
+  { label: "Services",  href: "/services",  icon: Package   },
+  { label: "Analytics", href: "/analytics", icon: BarChart3 },
+  { label: "Leads",     href: "/leads",     icon: Target    },
+];
+
+const bottomItems: NavItem[] = [
+  { label: "Paramètres", href: "/settings", icon: Settings },
+];
+
+const DOCUMENTS_PATHS = documentsNavItems.map((i) => i.href);
+
+// ─── Badge colors ─────────────────────────────────────────────────────────────
 
 const badgeColors = {
   default: "bg-surface-active text-text-secondary",
-  warning:  "bg-status-warning/20 text-status-warning",
-  error:    "bg-status-error/20 text-status-error",
+  warning: "bg-status-warning/20 text-status-warning",
+  error:   "bg-status-error/20 text-status-error",
 };
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function Sidebar({ onClose }: SidebarProps) {
   const pathname = usePathname();
-  const [counts, setCounts]   = useState<Counts>({ clients: 0, devis: 0, factures: 0 });
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [counts,        setCounts]        = useState<Counts>({ clients: 0, devis: 0, factures: 0 });
+  const [profile,       setProfile]       = useState<Profile | null>(null);
+  const [documentsOpen, setDocumentsOpen] = useState(true);
   const { openAgent } = useAgent();
 
+  // Auto-expand Documents if we're on a document route
+  useEffect(() => {
+    if (DOCUMENTS_PATHS.some((p) => pathname.startsWith(p))) {
+      setDocumentsOpen(true);
+    }
+  }, [pathname]);
+
+  // Fetch profile + badge counts
   useEffect(() => {
     const supabase = createBrowserClient();
 
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return;
 
-      // Profil artisan
       const { data: prof } = await supabase
         .from("users")
         .select("prenom, nom, metier, ville")
@@ -67,7 +110,6 @@ export default function Sidebar({ onClose }: SidebarProps) {
         .single();
       if (prof) setProfile(prof);
 
-      // Counts en parallèle
       const [clientsRes, devisRes, facturesRes] = await Promise.all([
         supabase
           .from("clients")
@@ -93,16 +135,45 @@ export default function Sidebar({ onClose }: SidebarProps) {
     }).catch(() => {});
   }, []);
 
-  const initials = profile
-    ? `${profile.prenom?.[0] ?? ""}${profile.nom?.[0] ?? ""}`.toUpperCase()
-    : "?";
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  const initials    = profile ? `${profile.prenom?.[0] ?? ""}${profile.nom?.[0] ?? ""}`.toUpperCase() : "?";
   const displayName = profile ? `${profile.prenom} ${profile.nom}` : "—";
-  const displayJob  = profile
-    ? [profile.metier, profile.ville].filter(Boolean).join(" — ")
-    : "";
+  const displayJob  = profile ? [profile.metier, profile.ville].filter(Boolean).join(" — ") : "";
+
+  const renderNavItem = (item: NavItem) => {
+    const Icon     = item.icon;
+    const isActive = pathname === item.href;
+    const count    = item.countKey ? counts[item.countKey] : 0;
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        onClick={onClose}
+        className={clsx("sidebar-item", isActive && "active")}
+      >
+        <Icon className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={isActive ? 2.5 : 2} />
+        <span className="flex-1 text-sm font-medium">{item.label}</span>
+        {count > 0 && (
+          <span className={clsx(
+            "text-[10px] font-bold px-1.5 py-0.5 rounded-md min-w-[20px] text-center",
+            item.badgeType ? badgeColors[item.badgeType] : badgeColors.default
+          )}>
+            {count}
+          </span>
+        )}
+      </Link>
+    );
+  };
+
+  const isDocumentsActive = DOCUMENTS_PATHS.some((p) => pathname.startsWith(p));
+  const docsBadgeCount    = (counts.factures ?? 0) + (counts.devis ?? 0);
+
+  // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
     <aside className="w-64 h-full flex flex-col bg-background-secondary border-r border-surface-border">
+
       {/* Logo */}
       <div className="px-5 py-5 border-b border-surface-border flex items-center justify-between">
         <Link
@@ -146,31 +217,53 @@ export default function Sidebar({ onClose }: SidebarProps) {
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
         <p className="px-3 mb-2 text-[10px] font-semibold text-text-muted uppercase tracking-widest">Navigation</p>
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = pathname === item.href;
-          const count = item.countKey ? counts[item.countKey] : 0;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onClose}
-              className={clsx("sidebar-item", isActive && "active")}
-            >
-              <Icon className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={isActive ? 2.5 : 2} />
-              <span className="flex-1 text-sm font-medium">{item.label}</span>
-              {count > 0 && (
-                <span className={clsx(
-                  "text-[10px] font-bold px-1.5 py-0.5 rounded-md min-w-[20px] text-center",
-                  item.badgeType ? badgeColors[item.badgeType] : badgeColors.default
-                )}>
-                  {count}
-                </span>
-              )}
-            </Link>
-          );
-        })}
 
+        {/* Top items: Dashboard, Clients */}
+        {topNavItems.map(renderNavItem)}
+
+        {/* ── Documents group ───────────────────────────────────────────── */}
+        <div className="pt-1">
+          <button
+            onClick={() => setDocumentsOpen((o) => !o)}
+            className={clsx(
+              "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-all",
+              isDocumentsActive
+                ? "text-primary"
+                : "text-text-secondary hover:text-text-primary hover:bg-surface-hover"
+            )}
+          >
+            <Files
+              className="w-[18px] h-[18px] flex-shrink-0"
+              strokeWidth={isDocumentsActive ? 2.5 : 2}
+            />
+            <span className="flex-1 text-sm font-medium">Documents</span>
+            {/* Badge total si des docs nécessitent attention */}
+            {!documentsOpen && docsBadgeCount > 0 && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md min-w-[20px] text-center bg-status-error/20 text-status-error">
+                {docsBadgeCount}
+              </span>
+            )}
+            <ChevronDown
+              className={clsx(
+                "w-3.5 h-3.5 flex-shrink-0 transition-transform duration-200",
+                documentsOpen && "rotate-180"
+              )}
+            />
+          </button>
+
+          {documentsOpen && (
+            <div className="mt-0.5 ml-3 pl-3 border-l border-surface-border space-y-0.5">
+              {documentsNavItems.map(renderNavItem)}
+            </div>
+          )}
+        </div>
+
+        {/* Main nav: Chantiers, Services, Analytics, Leads */}
+        <div className="pt-1">
+          {mainNavItems.map(renderNavItem)}
+        </div>
+
+        {/* ── Intelligence ──────────────────────────────────────────────── */}
         <div className="pt-4 pb-1">
           <p className="px-3 mb-2 text-[10px] font-semibold text-text-muted uppercase tracking-widest">Intelligence</p>
         </div>
@@ -187,13 +280,13 @@ export default function Sidebar({ onClose }: SidebarProps) {
         </button>
         <Link
           href="/factures"
-          onClick={() => {
-            console.log("[SidebarChorus] click → /factures");
-            onClose?.();
-          }}
+          onClick={onClose}
           className={clsx("sidebar-item", pathname === "/factures" && "active")}
         >
-          <Building2 className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={pathname === "/factures" ? 2.5 : 2} />
+          <Building2
+            className="w-[18px] h-[18px] flex-shrink-0"
+            strokeWidth={pathname === "/factures" ? 2.5 : 2}
+          />
           <span className="flex-1 text-sm font-medium text-left">Chorus Pro</span>
           <span className="w-2 h-2 rounded-full bg-status-success" />
         </Link>
@@ -201,16 +294,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
       {/* Bottom section */}
       <div className="px-3 py-3 border-t border-surface-border space-y-0.5">
-        {bottomItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = pathname === item.href;
-          return (
-            <Link key={item.href} href={item.href} onClick={onClose} className={clsx("sidebar-item", isActive && "active")}>
-              <Icon className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={2} />
-              <span className="text-sm font-medium">{item.label}</span>
-            </Link>
-          );
-        })}
+        {bottomItems.map(renderNavItem)}
         <button
           className="sidebar-item w-full text-status-error hover:text-status-error hover:bg-status-error/10"
           onClick={async () => {
