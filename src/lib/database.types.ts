@@ -257,6 +257,57 @@ export type ServiceRow = {
   updated_at:  string;
 }
 
+// ─── Avoirs ──────────────────────────────────────────────────────────────────
+
+export type AvoirStatut = "brouillon" | "emis" | "annule";
+
+export type AvoirRow = {
+  id:            string;
+  user_id:       string;
+  facture_id:    string | null;
+  numero:        string;
+  client_nom:    string;
+  client_email:  string | null;
+  objet:         string;
+  motif:         string | null;
+  lignes:        LigneDevis[];
+  taux_tva:      number;
+  montant_ht:    number;
+  montant_tva:   number;
+  montant_ttc:   number;
+  date_emission: string;
+  statut:        AvoirStatut;
+  notes:         string | null;
+  created_at:    string;
+  updated_at:    string;
+}
+
+// ─── Factures récurrentes ────────────────────────────────────────────────────
+
+export type RecurrencePeriodicite = "mensuelle" | "trimestrielle" | "semestrielle" | "annuelle";
+export type RecurrenceStatut      = "actif" | "suspendu" | "termine";
+
+export type FactureRecurrenteRow = {
+  id:                   string;
+  user_id:              string;
+  client_nom:           string;
+  client_email:         string | null;
+  objet:                string;
+  lignes:               LigneDevis[];
+  taux_tva:             number;
+  montant_ht:           number;
+  montant_tva:          number;
+  montant_ttc:          number;
+  periodicite:          RecurrencePeriodicite;
+  date_debut:           string;
+  date_fin:             string | null;
+  prochaine_generation: string;
+  statut:               RecurrenceStatut;
+  notes:                string | null;
+  created_at:           string;
+  updated_at:           string;
+}
+
 export type AutomatisationConfig = {
   delai_jours?: number;
   canal: "email" | "sms" | "both";
@@ -708,6 +759,72 @@ export type Database = {
         };
         Update: Partial<Omit<ServiceRow, "id" | "created_at">>;
         Relationships: [];
+      };
+      avoirs: {
+        Row: AvoirRow;
+        Insert: {
+          id?:            string;
+          user_id:        string;
+          facture_id?:    string | null;
+          numero?:        string;
+          client_nom:     string;
+          client_email?:  string | null;
+          objet:          string;
+          motif?:         string | null;
+          lignes?:        LigneDevis[];
+          taux_tva?:      number;
+          montant_ht?:    number;
+          montant_tva?:   number;
+          montant_ttc?:   number;
+          date_emission?: string;
+          statut?:        AvoirStatut;
+          notes?:         string | null;
+          created_at?:    string;
+          updated_at?:    string;
+        };
+        Update: Partial<Omit<AvoirRow, "id" | "created_at">>;
+        Relationships: [
+          {
+            foreignKeyName: "avoirs_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      factures_recurrentes: {
+        Row: FactureRecurrenteRow;
+        Insert: {
+          id?:                   string;
+          user_id:               string;
+          client_nom:            string;
+          client_email?:         string | null;
+          objet:                 string;
+          lignes?:               LigneDevis[];
+          taux_tva?:             number;
+          montant_ht?:           number;
+          montant_tva?:          number;
+          montant_ttc?:          number;
+          periodicite?:          RecurrencePeriodicite;
+          date_debut?:           string;
+          date_fin?:             string | null;
+          prochaine_generation?: string;
+          statut?:               RecurrenceStatut;
+          notes?:                string | null;
+          created_at?:           string;
+          updated_at?:           string;
+        };
+        Update: Partial<Omit<FactureRecurrenteRow, "id" | "created_at">>;
+        Relationships: [
+          {
+            foreignKeyName: "factures_recurrentes_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
       };
     };
     Views: Record<never, never>;

@@ -1,5 +1,5 @@
-import DocumentListClient from "@/components/documents/DocumentListClient";
+import FacturesRecurrentesClient from "@/components/factures-recurrentes/FacturesRecurrentesClient";
 
 export default function FacturesRecurrentesPage() {
-  return <DocumentListClient type="recurrent" />;
+  return <FacturesRecurrentesClient />;
 }

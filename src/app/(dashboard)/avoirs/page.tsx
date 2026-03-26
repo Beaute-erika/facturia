@@ -1,5 +1,5 @@
-import DocumentListClient from "@/components/documents/DocumentListClient";
+import AvoirsClient from "@/components/avoirs/AvoirsClient";
 
 export default function AvoirsPage() {
-  return <DocumentListClient type="avoir" />;
+  return <AvoirsClient />;
 }
