@@ -260,8 +260,29 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   );
 }
 
+const NOOP_AGENT: AgentState & AgentActions = {
+  isOpen:           false,
+  context:          undefined,
+  messages:         [],
+  isLoading:        false,
+  isLoadingHistory: false,
+  historyLoaded:    false,
+  error:            null,
+  usage:            null,
+  openAgent:        () => {},
+  closeAgent:       () => {},
+  sendMessage:      async () => {},
+  clearMessages:    () => {},
+  refreshUsage:     async () => {},
+};
+
 export function useAgent() {
   const ctx = useContext(AgentCtx);
-  if (!ctx) throw new Error("useAgent must be used inside AgentProvider");
+  if (!ctx) {
+    if (process.env.NODE_ENV === "development") {
+      console.error("useAgent must be used inside AgentProvider");
+    }
+    return NOOP_AGENT;
+  }
   return ctx;
 }
