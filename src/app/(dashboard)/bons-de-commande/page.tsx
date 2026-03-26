@@ -1,5 +1,5 @@
-import DocumentListClient from "@/components/documents/DocumentListClient";
+import BonsDeCommandeClient from "@/components/bons-de-commande/BonsDeCommandeClient";
 
 export default function BonsDeCommandePage() {
-  return <DocumentListClient type="bon-commande" />;
+  return <BonsDeCommandeClient />;
 }

@@ -308,6 +308,82 @@ export type FactureRecurrenteRow = {
   updated_at:           string;
 }
 
+// ─── Factures pro forma ──────────────────────────────────────────────────────
+
+export type ProFormaStatut = "brouillon" | "envoye" | "accepte" | "refuse" | "expire";
+
+export type FactureProFormaRow = {
+  id:             string;
+  user_id:        string;
+  numero:         string;
+  client_nom:     string;
+  client_email:   string | null;
+  objet:          string;
+  lignes:         LigneDevis[];
+  taux_tva:       number;
+  montant_ht:     number;
+  montant_tva:    number;
+  montant_ttc:    number;
+  date_emission:  string;
+  date_validite:  string | null;
+  statut:         ProFormaStatut;
+  notes:          string | null;
+  created_at:     string;
+  updated_at:     string;
+}
+
+// ─── Bons de commande ────────────────────────────────────────────────────────
+
+export type BonCommandeStatut = "brouillon" | "envoye" | "confirme" | "annule";
+
+export type BonDeCommandeRow = {
+  id:                   string;
+  user_id:              string;
+  numero:               string;
+  client_nom:           string;
+  client_email:         string | null;
+  objet:                string;
+  lignes:               LigneDevis[];
+  taux_tva:             number;
+  montant_ht:           number;
+  montant_tva:          number;
+  montant_ttc:          number;
+  date_emission:        string;
+  date_livraison_prevue: string | null;
+  statut:               BonCommandeStatut;
+  notes:                string | null;
+  created_at:           string;
+  updated_at:           string;
+}
+
+// ─── Bons de livraison ───────────────────────────────────────────────────────
+
+export type BonLivraisonStatut = "brouillon" | "envoye" | "livre" | "annule";
+
+export type BonLivraisonLigne = {
+  id:          string;
+  description: string;
+  quantite:    number;
+  unite:       string;
+  reference:   string;
+}
+
+export type BonDeLivraisonRow = {
+  id:             string;
+  user_id:        string;
+  numero:         string;
+  client_nom:     string;
+  client_email:   string | null;
+  objet:          string;
+  lignes:         BonLivraisonLigne[];
+  date_emission:  string;
+  date_livraison: string | null;
+  statut:         BonLivraisonStatut;
+  notes:          string | null;
+  created_at:     string;
+  updated_at:     string;
+}
+
 export type AutomatisationConfig = {
   delai_jours?: number;
   canal: "email" | "sms" | "both";
@@ -792,6 +868,74 @@ export type Database = {
             referencedColumns: ["id"];
           }
         ];
+      };
+      factures_pro_forma: {
+        Row: FactureProFormaRow;
+        Insert: {
+          id?:            string;
+          user_id:        string;
+          numero?:        string;
+          client_nom:     string;
+          client_email?:  string | null;
+          objet:          string;
+          lignes?:        LigneDevis[];
+          taux_tva?:      number;
+          montant_ht?:    number;
+          montant_tva?:   number;
+          montant_ttc?:   number;
+          date_emission?: string;
+          date_validite?: string | null;
+          statut?:        ProFormaStatut;
+          notes?:         string | null;
+          created_at?:    string;
+          updated_at?:    string;
+        };
+        Update: Partial<Omit<FactureProFormaRow, "id" | "created_at">>;
+        Relationships: [];
+      };
+      bons_de_commande: {
+        Row: BonDeCommandeRow;
+        Insert: {
+          id?:                   string;
+          user_id:               string;
+          numero?:               string;
+          client_nom:            string;
+          client_email?:         string | null;
+          objet:                 string;
+          lignes?:               LigneDevis[];
+          taux_tva?:             number;
+          montant_ht?:           number;
+          montant_tva?:          number;
+          montant_ttc?:          number;
+          date_emission?:        string;
+          date_livraison_prevue?: string | null;
+          statut?:               BonCommandeStatut;
+          notes?:                string | null;
+          created_at?:           string;
+          updated_at?:           string;
+        };
+        Update: Partial<Omit<BonDeCommandeRow, "id" | "created_at">>;
+        Relationships: [];
+      };
+      bons_de_livraison: {
+        Row: BonDeLivraisonRow;
+        Insert: {
+          id?:             string;
+          user_id:         string;
+          numero?:         string;
+          client_nom:      string;
+          client_email?:   string | null;
+          objet:           string;
+          lignes?:         BonLivraisonLigne[];
+          date_emission?:  string;
+          date_livraison?: string | null;
+          statut?:         BonLivraisonStatut;
+          notes?:          string | null;
+          created_at?:     string;
+          updated_at?:     string;
+        };
+        Update: Partial<Omit<BonDeLivraisonRow, "id" | "created_at">>;
+        Relationships: [];
       };
       factures_recurrentes: {
         Row: FactureRecurrenteRow;

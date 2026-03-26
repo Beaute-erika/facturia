@@ -1,5 +1,5 @@
-import DocumentListClient from "@/components/documents/DocumentListClient";
+import FacturesProFormaClient from "@/components/factures-pro-forma/FacturesProFormaClient";
 
 export default function FacturesProFormaPage() {
-  return <DocumentListClient type="pro-forma" />;
+  return <FacturesProFormaClient />;
 }
