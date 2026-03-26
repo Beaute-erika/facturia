@@ -32,7 +32,7 @@ function extractCoords(siege){const rawLat=siege.latitude,rawLon=siege.longitude
 function parseHousenumber(addr){const m=addr.match(/^(\d+\s*(?:BIS|TER|QUATER)?)\s/i);return m?m[1].replace(/\s/g,"").toUpperCase():"";}
 function parseStreet(addr){return addr.replace(/^\d+\s*(?:BIS|TER|QUATER)?\s+/i,"").replace(/\s+\d{5}.*$/,"").trim();}
 
-function computeConfidence(method,distM,nameSim){switch(method){case"address_exact":return Math.max(80,Math.min(92,92-Math.round(distM/10)));case"address_cp":return Math.max(75,Math.min(85,85-Math.round(distM/12)));case"name_high":return Math.max(68,Math.min(85,Math.round((1-distM/200)*40+nameSim*45)));case"name_medium":return Math.max(48,Math.min(68,Math.round((1-distM/200)*30+nameSim*38)));case"name_low":return Math.max(32,Math.min(48,Math.round((1-distM/200)*20+nameSim*28)));case"official_registry":return 95;case"website_tel_link":return 85;case"website_schema":return 82;case"website_text":return 65;}}
+function computeConfidence(method,distM,nameSim){switch(method){case"address_exact":return Math.max(80,Math.min(92,92-Math.round(distM/10)));case"address_cp":return Math.max(75,Math.min(85,85-Math.round(distM/12)));case"address_proximity":return Math.max(74,Math.min(80,80-Math.round(distM/5)));case"name_high":return Math.max(68,Math.min(85,Math.round((1-distM/200)*40+nameSim*45)));case"name_medium":return Math.max(48,Math.min(68,Math.round((1-distM/200)*30+nameSim*38)));case"name_low":return Math.max(32,Math.min(48,Math.round((1-distM/200)*20+nameSim*28)));case"official_registry":return 95;case"website_tel_link":return 85;case"website_schema":return 82;case"website_text":return 65;}}
 
 function extractPhonesFromHtml(html){
   const found=new Set();let method="website_text";
@@ -115,6 +115,7 @@ function findPhoneMatch(lead,osmEntries,metier){
     if(distM>350)continue;
     if(distM<=300&&osm.housenumber&&osm.street&&leadNum&&osm.housenumber===leadNum){const streetSim=nameSimilarity(leadStreet,osm.street);if(streetSim>=0.35){candidates.push({phone:osm.phone,method:"address_exact",confidence:computeConfidence("address_exact",distM,streetSim),distM});continue;}}
     if(distM<=250&&osm.housenumber&&osm.postcode&&leadNum&&osm.housenumber===leadNum&&osm.postcode===lead.code_postal){candidates.push({phone:osm.phone,method:"address_cp",confidence:computeConfidence("address_cp",distM,0),distM});continue;}
+    if(distM<=30&&osm.postcode&&osm.postcode===lead.code_postal){candidates.push({phone:osm.phone,method:"address_proximity",confidence:computeConfidence("address_proximity",distM,0),distM});continue;}
     if(distM<=200&&osm.name){const sim=bestNameSimilarity(leadNames,osm.name);let method=null;if(sim>=0.70&&distM<=150)method="name_high";else if(sim>=0.35&&distM<=150)method="name_medium";else if(sim>=0.20&&distM<=80){if(isLeadTradeCoherent(lead,metier))method="name_low";}if(method)candidates.push({phone:osm.phone,method,confidence:computeConfidence(method,distM,sim),distM});}
   }
   if(!candidates.length)return null;
@@ -230,7 +231,7 @@ async function runSearch(label, adresse, metier, rayon_km) {
   console.log(`   Probable (55-79%):           ${medConf}`);
   console.log(`   Incertain (<55%):            ${lowConf}`);
   console.log(`   Sources: OSM=${bySource.openstreetmap??0}, Registre=${bySource["annuaire-entreprises"]??0}, Site=${bySource.website??0}`);
-  console.log(`   Méthodes OSM: addr_exact=${byMethod.address_exact??0}, addr_cp=${byMethod.address_cp??0}, name_high=${byMethod.name_high??0}, name_med=${byMethod.name_medium??0}, name_low=${byMethod.name_low??0}`);
+  console.log(`   Méthodes OSM: addr_exact=${byMethod.address_exact??0}, addr_cp=${byMethod.address_cp??0}, addr_prox=${byMethod.address_proximity??0}, name_high=${byMethod.name_high??0}, name_med=${byMethod.name_medium??0}, name_low=${byMethod.name_low??0}`);
   console.log(`   Méthodes Web: registry=${byMethod.official_registry??0}, tel_link=${byMethod.website_tel_link??0}, schema=${byMethod.website_schema??0}, text=${byMethod.website_text??0}`);
   console.log(`   Durée totale: ${t3-t0}ms`);
 

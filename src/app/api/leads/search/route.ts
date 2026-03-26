@@ -34,6 +34,7 @@ export interface LeadResult {
 type MatchMethod =
   | "address_exact"       // housenumber + street → 80–92%
   | "address_cp"          // housenumber + postcode → 75–85%
+  | "address_proximity"   // ≤30m + same postcode (no housenumber required) → 74–80%
   | "name_high"           // name sim ≥0.7, dist <150m → 68–85%
   | "name_medium"         // name sim 0.35–0.7 → 48–68%
   | "name_low"            // name sim 0.2–0.35 → 32–48%
@@ -232,6 +233,7 @@ function computeConfidence(method: MatchMethod, distM: number, nameSim: number):
   switch (method) {
     case "address_exact":     return Math.max(80, Math.min(92, 92 - Math.round(distM / 10)));
     case "address_cp":        return Math.max(75, Math.min(85, 85 - Math.round(distM / 12)));
+    case "address_proximity": return Math.max(74, Math.min(80, 80 - Math.round(distM / 5)));
     case "name_high":         return Math.max(68, Math.min(85, Math.round((1 - distM / 200) * 40 + nameSim * 45)));
     case "name_medium":       return Math.max(48, Math.min(68, Math.round((1 - distM / 200) * 30 + nameSim * 38)));
     case "name_low":          return Math.max(32, Math.min(48, Math.round((1 - distM / 200) * 20 + nameSim * 28)));
@@ -511,6 +513,13 @@ function findPhoneMatch(
         candidates.push({ phone: osm.phone, method: "address_cp", confidence: computeConfidence("address_cp", distM, 0), distM });
         continue;
       }
+    }
+
+    // Strategy 2b: Proximity + postcode — catches OSM entries without addr:housenumber/street
+    // Two geographic constraints (distance ≤30m + same CP) without relying on name
+    if (distM <= 30 && osm.postcode && osm.postcode === lead.code_postal) {
+      candidates.push({ phone: osm.phone, method: "address_proximity", confidence: computeConfidence("address_proximity", distM, 0), distM });
+      continue;
     }
 
     // Strategy 3: Name similarity (multi-name: try nom_complet + nom_commercial)
