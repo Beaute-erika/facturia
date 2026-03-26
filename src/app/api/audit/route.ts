@@ -354,24 +354,31 @@ async function runScenario(adresse: string, metier: string, rayon_km: number): P
 
 // ─── Route ────────────────────────────────────────────────────────────────────
 
+// Allow up to 60s for the Vercel function
+export const maxDuration = 60;
+
+const SCENARIOS = [
+  { label: "Paris / plombier / 10km",      adresse: "1 rue de Rivoli 75001 Paris",          metier: "plombier",  rayon_km: 10 },
+  { label: "Lyon / serrurier / 10km",       adresse: "10 Rue de la République 69001 Lyon",    metier: "serrurier", rayon_km: 10 },
+  { label: "Marseille / boulanger / 10km",  adresse: "Quai du Port 13002 Marseille",           metier: "boulanger", rayon_km: 10 },
+];
+
 export async function GET(req: NextRequest) {
   const secret = req.nextUrl.searchParams.get("secret");
   if (secret !== AUDIT_SECRET) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const scenarios = [
-    { label: "Paris / plombier / 10km",      adresse: "1 rue de Rivoli 75001 Paris",            metier: "plombier",   rayon_km: 10 },
-    { label: "Lyon / serrurier / 10km",       adresse: "10 Rue de la République 69001 Lyon",      metier: "serrurier",  rayon_km: 10 },
-    { label: "Marseille / boulanger / 10km",  adresse: "Quai du Port 13002 Marseille",             metier: "boulanger",  rayon_km: 10 },
-  ];
+  // Run one scenario at a time via ?s=1|2|3 to stay within the 60s function timeout
+  const sParam = req.nextUrl.searchParams.get("s");
+  const idx = sParam ? parseInt(sParam) - 1 : -1;
 
-  const results: Record<string, unknown> = {};
-  for (const s of scenarios) {
-    results[s.label] = await runScenario(s.adresse, s.metier, s.rayon_km);
-    // Small pause between scenarios to avoid hammering external APIs
-    await new Promise(r => setTimeout(r, 5000));
+  if (idx >= 0 && idx < SCENARIOS.length) {
+    const s = SCENARIOS[idx];
+    const result = await runScenario(s.adresse, s.metier, s.rayon_km);
+    return NextResponse.json({ audit_date: new Date().toISOString(), scenario: s.label, result }, { status: 200 });
   }
 
-  return NextResponse.json({ audit_date: new Date().toISOString(), results }, { status: 200 });
+  // No ?s param → return list of available scenarios
+  return NextResponse.json({ scenarios: SCENARIOS.map((s, i) => ({ id: i + 1, label: s.label })) });
 }
