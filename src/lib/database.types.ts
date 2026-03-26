@@ -201,6 +201,41 @@ export type NotificationRow = {
   created_at: string;
 }
 
+export type LeadSearchRow = {
+  id: string;
+  user_id: string;
+  adresse: string;
+  metier: string;
+  rayon_km: number;
+  lat: number | null;
+  lon: number | null;
+  result_count: number;
+  created_at: string;
+}
+
+export type LeadRow = {
+  id: string;
+  user_id: string;
+  search_id: string | null;
+  nom: string;
+  activite: string | null;
+  code_naf: string | null;
+  adresse: string | null;
+  ville: string | null;
+  code_postal: string | null;
+  telephone: string | null;
+  email: string | null;
+  site_web: string | null;
+  siret: string | null;
+  siren: string | null;
+  distance_km: number | null;
+  score: number;
+  source: string;
+  saved: boolean;
+  raw_data: Json | null;
+  created_at: string;
+}
+
 export type AutomatisationConfig = {
   delai_jours?: number;
   canal: "email" | "sms" | "both";
@@ -512,6 +547,72 @@ export type Database = {
             columns: ["user_id"];
             isOneToOne: false;
             referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      lead_searches: {
+        Row: LeadSearchRow;
+        Insert: {
+          id?: string;
+          user_id: string;
+          adresse: string;
+          metier: string;
+          rayon_km: number;
+          lat?: number | null;
+          lon?: number | null;
+          result_count?: number;
+          created_at?: string;
+        };
+        Update: Partial<Omit<LeadSearchRow, "id" | "created_at">>;
+        Relationships: [
+          {
+            foreignKeyName: "lead_searches_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      leads: {
+        Row: LeadRow;
+        Insert: {
+          id?: string;
+          user_id: string;
+          search_id?: string | null;
+          nom: string;
+          activite?: string | null;
+          code_naf?: string | null;
+          adresse?: string | null;
+          ville?: string | null;
+          code_postal?: string | null;
+          telephone?: string | null;
+          email?: string | null;
+          site_web?: string | null;
+          siret?: string | null;
+          siren?: string | null;
+          distance_km?: number | null;
+          score?: number;
+          source?: string;
+          saved?: boolean;
+          raw_data?: Json | null;
+          created_at?: string;
+        };
+        Update: Partial<Omit<LeadRow, "id" | "created_at">>;
+        Relationships: [
+          {
+            foreignKeyName: "leads_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "leads_search_id_fkey";
+            columns: ["search_id"];
+            isOneToOne: false;
+            referencedRelation: "lead_searches";
             referencedColumns: ["id"];
           }
         ];

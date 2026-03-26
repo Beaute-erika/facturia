@@ -25,6 +25,9 @@ export async function GET(
       telephone: string | null;
       phone_source: string | null;
       phone_confidence: number | null;
+      phone_secondary: string | null;
+      phone_match_method: string | null;
+      phone_page_url: string | null;
       email: string | null;
       site_web: string | null;
       siret: string | null;
@@ -37,7 +40,7 @@ export async function GET(
     const { data: leadsRaw, error } = await (supabase as any)
       .from("leads")
       .select(
-        "nom, activite, adresse, ville, code_postal, telephone, phone_source, phone_confidence, email, site_web, siret, distance_km, score, source"
+        "nom, activite, adresse, ville, code_postal, telephone, phone_source, phone_confidence, phone_secondary, phone_match_method, phone_page_url, email, site_web, siret, distance_km, score, source"
       )
       .eq("search_id", searchId)
       .eq("user_id", user.id)
@@ -57,10 +60,13 @@ export async function GET(
       "Ville",
       "CP",
       "Téléphone",
+      "Téléphone secondaire",
       "Source téléphone",
+      "Méthode matching",
       "Confiance tel. (%)",
-      "Email",
+      "URL source téléphone",
       "Site web",
+      "Email",
       "SIRET",
       "Distance (km)",
       "Score",
@@ -74,10 +80,13 @@ export async function GET(
         row.ville ?? "",
         row.code_postal ?? "",
         row.telephone ?? "",
+        row.phone_secondary ?? "",
         row.phone_source ?? "",
+        row.phone_match_method ?? "",
         row.phone_confidence != null ? String(row.phone_confidence) : "",
-        row.email ?? "",
+        row.phone_page_url ?? "",
         row.site_web ?? "",
+        row.email ?? "",
         row.siret ?? "",
         row.distance_km != null ? String(Number(row.distance_km).toFixed(1)) : "",
         String(row.score ?? 0),

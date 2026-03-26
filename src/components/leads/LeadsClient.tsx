@@ -35,6 +35,9 @@ interface LeadResult {
   telephone: string | null;
   phone_source: string | null;
   phone_confidence: number | null;
+  phone_secondary: string | null;
+  phone_match_method: string | null;
+  phone_page_url: string | null;
   email: string | null;
   site_web: string | null;
   siret: string | null;
@@ -57,6 +60,13 @@ interface SearchHistory {
 
 // ─── CSV export (client-side) ────────────────────────────────────────────────
 
+function confidenceTier(confidence: number | null): { label: string; cls: string } {
+  if (confidence == null) return { label: "", cls: "" };
+  if (confidence >= 80) return { label: "Fiable", cls: "text-status-success bg-status-success/10" };
+  if (confidence >= 55) return { label: "Probable", cls: "text-status-warning bg-status-warning/10" };
+  return { label: "Incertain", cls: "text-status-error bg-status-error/10" };
+}
+
 function exportCSV(leads: LeadResult[]) {
   const headers = [
     "Nom",
@@ -65,10 +75,13 @@ function exportCSV(leads: LeadResult[]) {
     "Ville",
     "CP",
     "Téléphone",
+    "Téléphone secondaire",
     "Source téléphone",
+    "Méthode matching",
     "Confiance tel. (%)",
-    "Email",
+    "URL source téléphone",
     "Site web",
+    "Email",
     "SIRET",
     "Distance (km)",
     "Score",
@@ -81,10 +94,13 @@ function exportCSV(leads: LeadResult[]) {
     l.ville,
     l.code_postal,
     l.telephone ?? "",
+    l.phone_secondary ?? "",
     l.phone_source ?? "",
+    l.phone_match_method ?? "",
     l.phone_confidence != null ? String(l.phone_confidence) : "",
-    l.email ?? "",
+    l.phone_page_url ?? "",
     l.site_web ?? "",
+    l.email ?? "",
     l.siret ?? "",
     l.distance_km.toFixed(1),
     String(l.score),
@@ -159,32 +175,57 @@ function LeadCard({ lead }: { lead: LeadResult }) {
             </span>
           </div>
 
-          {/* Phone — prominent row */}
-          <div className="mb-2">
-            {lead.telephone ? (
-              <div className="flex items-center gap-2 flex-wrap">
+          {/* Phone — all leads guaranteed to have a phone */}
+          <div className="mb-2 space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <a
+                href={`tel:${(lead.telephone ?? "").replace(/\s/g, "")}`}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-status-info/10 text-status-info text-xs font-semibold hover:bg-status-info/20 transition-colors"
+              >
+                <Phone className="w-3 h-3 flex-shrink-0" />
+                {lead.telephone}
+              </a>
+              {lead.phone_confidence != null && (() => {
+                const tier = confidenceTier(lead.phone_confidence);
+                return (
+                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${tier.cls}`}>
+                    {tier.label} {lead.phone_confidence}%
+                  </span>
+                );
+              })()}
+              {lead.phone_source && (
+                <span
+                  className="text-[10px] text-text-muted"
+                  title={`Source: ${lead.phone_source} — Méthode: ${lead.phone_match_method ?? ""}`}
+                >
+                  {lead.phone_source === "openstreetmap" ? "OSM" :
+                   lead.phone_source === "annuaire-entreprises" ? "Registre" :
+                   lead.phone_source === "website" ? "Site web" : lead.phone_source}
+                </span>
+              )}
+              {lead.phone_page_url && (
                 <a
-                  href={`tel:${lead.telephone.replace(/\s/g, "")}`}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-status-info/10 text-status-info text-xs font-semibold hover:bg-status-info/20 transition-colors"
+                  href={lead.phone_page_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] text-status-info/70 hover:text-status-info transition-colors"
+                  title="Page source du numéro"
+                >
+                  ↗
+                </a>
+              )}
+            </div>
+            {lead.phone_secondary && (
+              <div className="flex items-center gap-1.5">
+                <a
+                  href={`tel:${lead.phone_secondary.replace(/\s/g, "")}`}
+                  className="flex items-center gap-1.5 text-[11px] text-text-muted hover:text-status-info transition-colors"
                 >
                   <Phone className="w-3 h-3 flex-shrink-0" />
-                  {lead.telephone}
+                  {lead.phone_secondary}
                 </a>
-                {lead.phone_source && (
-                  <span
-                    className="text-[10px] text-text-muted"
-                    title={`Source: ${lead.phone_source}${lead.phone_confidence ? ` — confiance ${lead.phone_confidence}%` : ""}`}
-                  >
-                    via {lead.phone_source === "openstreetmap" ? "OpenStreetMap" : lead.phone_source}
-                    {lead.phone_confidence != null && ` (${lead.phone_confidence}%)`}
-                  </span>
-                )}
+                <span className="text-[10px] text-text-muted/60">(alternatif)</span>
               </div>
-            ) : (
-              <span className="flex items-center gap-1 text-[11px] text-text-muted/60 italic">
-                <Phone className="w-3 h-3" />
-                Téléphone non trouvé
-              </span>
             )}
           </div>
 
@@ -265,7 +306,7 @@ export default function LeadsClient() {
   const [geocodedAddress, setGeocodedAddress] = useState("");
   const [searchLat, setSearchLat] = useState<number>(0);
   const [searchLon, setSearchLon] = useState<number>(0);
-  const [totalBeforeFilter, setTotalBeforeFilter] = useState(0);
+  const [totalCompanies, setTotalCompanies] = useState(0);
 
   // Sort & filter
   const [sortBy, setSortBy] = useState<"score" | "distance" | "nom">("score");
@@ -333,7 +374,7 @@ export default function LeadsClient() {
       setGeocodedAddress(data.geocoded_address ?? "");
       setSearchLat(data.lat ?? 0);
       setSearchLon(data.lon ?? 0);
-      setTotalBeforeFilter(data.total_before_filter ?? 0);
+      setTotalCompanies(data.total_companies ?? 0);
       setActiveTab("results");
     } catch {
       setError("Erreur réseau. Veuillez réessayer.");
@@ -556,7 +597,7 @@ export default function LeadsClient() {
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 text-sm text-text-muted">
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Recherche d&apos;entreprises en cours...
+                    Recherche et enrichissement des contacts en cours...
                   </div>
                   {[0, 1, 2].map((i) => (
                     <LeadSkeleton key={i} />
@@ -597,18 +638,18 @@ export default function LeadsClient() {
                 <div className="flex items-center justify-between flex-wrap gap-3">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-semibold text-text-primary">
-                      {displayedLeads.length} lead
-                      {displayedLeads.length !== 1 ? "s" : ""} trouvé
-                      {displayedLeads.length !== 1 ? "s" : ""}
+                      {displayedLeads.length} prospect
+                      {displayedLeads.length !== 1 ? "s" : ""} exploitable
+                      {displayedLeads.length !== 1 ? "s" : ""} avec téléphone
                     </p>
                     {geocodedAddress && (
                       <span className="text-xs text-text-muted">
                         autour de {geocodedAddress}
                       </span>
                     )}
-                    {totalBeforeFilter > 0 && (
+                    {totalCompanies > 0 && (
                       <Badge variant="default" size="sm">
-                        {totalBeforeFilter} analysés
+                        {totalCompanies} entreprises analysées
                       </Badge>
                     )}
                   </div>
@@ -676,7 +717,7 @@ export default function LeadsClient() {
                     Lancez une recherche
                   </p>
                   <p className="text-xs text-text-muted">
-                    Entrez une adresse et un métier pour trouver des leads locaux
+                    Seuls les prospects avec un numéro de téléphone valide seront affichés
                   </p>
                 </Card>
               )}
@@ -685,7 +726,7 @@ export default function LeadsClient() {
               {!loading && !error && leads.length > 0 && displayedLeads.length === 0 && (
                 <Card className="text-center py-8">
                   <p className="text-sm text-text-muted">
-                    Aucun lead avec un score ≥ {filterMinScore}. Abaissez le filtre.
+                    Aucun prospect avec un score ≥ {filterMinScore}. Abaissez le filtre.
                   </p>
                 </Card>
               )}

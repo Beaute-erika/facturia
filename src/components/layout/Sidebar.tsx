@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   LayoutDashboard, Users, FileText, Receipt, HardHat, BarChart3,
-  Settings, Zap, Building2, ChevronRight, LogOut, Sparkles, X,
+  Settings, Zap, Building2, ChevronRight, LogOut, Sparkles, X, Target,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { createBrowserClient } from "@/lib/supabase-client";
@@ -34,6 +34,7 @@ const navItems = [
   { label: "Factures",  href: "/factures", icon: Receipt,  countKey: "factures" as const, badgeType: "error"   as const },
   { label: "Chantiers", href: "/chantiers", icon: HardHat },
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
+  { label: "Leads", href: "/leads", icon: Target },
 ];
 
 const bottomItems = [{ label: "Paramètres", href: "/settings", icon: Settings }];
