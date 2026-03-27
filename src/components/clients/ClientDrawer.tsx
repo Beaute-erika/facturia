@@ -6,11 +6,12 @@ import {
   FileText, Receipt, HardHat, StickyNote, Plus,
   TrendingUp, Calendar, Send, ExternalLink,
   CheckCircle2, Clock, AlertTriangle, ChevronRight,
-  Pencil, Trash2,
+  Pencil, Trash2, Sparkles,
 } from "lucide-react";
 import { clsx } from "clsx";
 import type { Client } from "@/lib/clients-data";
 import Badge from "@/components/ui/Badge";
+import { useAgent } from "@/components/agent/AgentContext";
 
 interface ClientDrawerProps {
   client: Client;
@@ -48,6 +49,8 @@ export default function ClientDrawer({ client, onClose, onUpdate }: ClientDrawer
   const [tab, setTab] = useState<Tab>("résumé");
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
+  const { openAgent } = useAgent();
+  const clientUuid = (client as Client & { _uuid?: string })._uuid;
 
   const initials = client.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
 
@@ -155,6 +158,15 @@ export default function ClientDrawer({ client, onClose, onUpdate }: ClientDrawer
             <button className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20 transition-all text-xs font-semibold">
               <FileText className="w-3.5 h-3.5" /> Devis
             </button>
+            {clientUuid && (
+              <button
+                onClick={() => openAgent({ type: "client", id: clientUuid, label: client.name })}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20 transition-all text-xs font-semibold"
+                title="Demander à l'IA"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
 

@@ -34,6 +34,7 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { useAutosave } from "@/hooks/useAutosave";
 import { useHistory } from "@/hooks/useHistory";
 import { useOfflineSave } from "@/hooks/useOfflineSave";
+import { useAgent } from "@/components/agent/AgentContext";
 
 type DevisStatus = "accepté" | "envoyé" | "en attente" | "brouillon" | "refusé";
 
@@ -69,6 +70,7 @@ const FILTER_MAP: Record<Filter, DevisStatus | null> = {
 };
 
 export default function DevisClient() {
+  const { openAgent } = useAgent();
   const [devis, setDevis] = useState<Devis[]>([]);
   const [artisan, setArtisan] = useState<Partial<DevisData["artisan"]>>({});
   const [filter, setFilter] = useState<Filter>("Tous");
@@ -276,13 +278,13 @@ export default function DevisClient() {
     showToast(`Devis ${generated.id} créé par l'IA`);
   };
 
-  const handleConvert = (factureId: string) => {
+  const handleConvert = (factureNumero: string) => {
     if (!convertTarget) return;
     setDevis(devis.map((d) =>
       d.id === convertTarget.id ? { ...d, status: "accepté" } : d,
     ));
     setConvertTarget(null);
-    showToast(`Facture ${factureId} créée avec succès`);
+    showToast(`Facture ${factureNumero} créée avec succès`);
   };
 
   const handleDownload = async (d: Devis) => {
@@ -698,6 +700,17 @@ export default function DevisClient() {
                               className="p-1.5 rounded-lg transition-colors text-text-muted hover:text-text-primary hover:bg-surface-active"
                             >
                               <Pencil className="w-4 h-4" />
+                            </button>
+                          )}
+
+                          {/* Agent IA */}
+                          {!isEditing && d._uuid && (
+                            <button
+                              title="Demander à l'IA"
+                              onClick={() => openAgent({ type: "devis", id: d._uuid!, label: `${d.id} — ${d.client}` })}
+                              className="p-1.5 rounded-lg transition-colors text-text-muted hover:text-primary hover:bg-primary/10"
+                            >
+                              <Sparkles className="w-4 h-4" />
                             </button>
                           )}
 

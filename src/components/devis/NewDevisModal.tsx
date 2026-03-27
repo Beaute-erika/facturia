@@ -208,7 +208,6 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
 
     const clientLabel = selectedClient!.label;
 
-    const numero = `DV-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`;
     const dateFormatted = new Date(dateEmission).toLocaleDateString("fr-FR", {
       day: "2-digit", month: "short", year: "numeric",
     });
@@ -216,9 +215,10 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
       day: "2-digit", month: "short", year: "numeric",
     });
 
-    // Attempt Supabase save
+    // Save via API — numero auto-generated server-side
+    let numeroGenere = `DV-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`;
     try {
-      await fetch("/api/devis", {
+      const res = await fetch("/api/devis", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -241,9 +241,10 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
           acompte,
           notes: notes.trim() || null,
           conditions_paiement: conditionsPaiement.trim() || null,
-          numero,
         }),
       });
+      const json = await res.json();
+      if (json?.data?.numero) numeroGenere = json.data.numero;
     } catch {
       // Supabase not configured — continue with local state
     }
@@ -251,7 +252,7 @@ export default function NewDevisModal({ onClose, onCreated }: Props) {
     setSaving(false);
 
     onCreated({
-      id: numero,
+      id: numeroGenere,
       client: clientLabel,
       objet: objet.trim(),
       montant: `${fmt(totals.ttc)} €`,

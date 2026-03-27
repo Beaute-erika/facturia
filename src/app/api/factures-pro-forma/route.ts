@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase-server";
+import { generateDocumentNumber } from "@/lib/document-sequences";
 
 export async function GET() {
   try {
@@ -54,7 +55,7 @@ export async function POST(req: NextRequest) {
       .from("factures_pro_forma")
       .insert({
         user_id:        user.id,
-        numero:         body.numero?.trim() || `PF-${Date.now()}`,
+        numero:         body.numero?.trim() || await generateDocumentNumber(supabase, user.id, "factures_pro_forma"),
         client_nom:     body.client_nom.trim(),
         client_email:   body.client_email?.trim() || null,
         objet:          body.objet.trim(),

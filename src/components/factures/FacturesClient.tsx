@@ -16,6 +16,7 @@ import {
   Receipt,
   Pencil,
   Check,
+  Sparkles,
 } from "lucide-react";
 import { clsx } from "clsx";
 import Card from "@/components/ui/Card";
@@ -34,6 +35,7 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { useAutosave } from "@/hooks/useAutosave";
 import { useHistory } from "@/hooks/useHistory";
 import { useOfflineSave } from "@/hooks/useOfflineSave";
+import { useAgent } from "@/components/agent/AgentContext";
 
 type FactureStatus = "payée" | "envoyée" | "en retard" | "brouillon";
 
@@ -79,6 +81,7 @@ const FILTER_MAP: Record<Filter, FactureStatus | null> = {
 };
 
 export default function FacturesClient() {
+  const { openAgent } = useAgent();
   const [factures, setFactures] = useState<Facture[]>([]);
   const [artisan, setArtisan] = useState<Partial<FactureData["artisan"]>>({});
   const [filter, setFilter] = useState<Filter>("Toutes");
@@ -950,6 +953,17 @@ export default function FacturesClient() {
                                 className="p-1.5 rounded-lg transition-colors text-text-muted hover:text-text-primary hover:bg-surface-active"
                               >
                                 <Pencil className="w-4 h-4" />
+                              </button>
+                            )}
+
+                            {/* Agent IA */}
+                            {!isEditing && f._uuid && (
+                              <button
+                                title="Demander à l'IA"
+                                onClick={() => openAgent({ type: "facture", id: f._uuid!, label: `${f.id} — ${f.client}` })}
+                                className="p-1.5 rounded-lg transition-colors text-text-muted hover:text-primary hover:bg-primary/10"
+                              >
+                                <Sparkles className="w-4 h-4" />
                               </button>
                             )}
 

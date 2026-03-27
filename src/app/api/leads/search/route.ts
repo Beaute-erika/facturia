@@ -16,6 +16,7 @@ export interface LeadResult {
   phone_match_method: string | null;
   phone_secondary: string | null;
   phone_page_url: string | null;
+  google_places_id: string | null;  // Google Place ID — stored for attribution (ToS §3.2.3)
   email: string | null;
   site_web: string | null;
   siret: string | null;
@@ -41,7 +42,8 @@ type MatchMethod =
   | "official_registry"   // annuaire-entreprises declared → 95%
   | "website_tel_link"    // <a href="tel:…"> → 85%
   | "website_schema"      // schema.org / itemprop → 82%
-  | "website_text";       // text regex → 65%
+  | "website_text"        // text regex → 65%
+  | "google_places_match";// Places API text search, name≥60% + postcode → 83–88%
 
 interface GeoFeature {
   geometry: { coordinates: [number, number] };
@@ -97,6 +99,18 @@ interface AnnuaireResponse {
   };
   telephone?: string | null;
   site_internet?: string | null;
+}
+
+interface GooglePlacesPlace {
+  id: string;
+  displayName?: { text: string; languageCode?: string };
+  internationalPhoneNumber?: string;
+  nationalPhoneNumber?: string;
+  addressComponents?: Array<{
+    longText: string;
+    shortText: string;
+    types: string[];
+  }>;
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
@@ -240,7 +254,8 @@ function computeConfidence(method: MatchMethod, distM: number, nameSim: number):
     case "official_registry": return 95;
     case "website_tel_link":  return 85;
     case "website_schema":    return 82;
-    case "website_text":      return 65;
+    case "website_text":         return 65;
+    case "google_places_match":  return 83;
   }
 }
 
@@ -248,22 +263,43 @@ function computeConfidence(method: MatchMethod, distM: number, nameSim: number):
 
 /**
  * Extract phone numbers from HTML content.
- * Priority: tel: links → schema.org / itemprop → text regex.
+ * Priority: tel: links → JSON-LD LocalBusiness → schema.org/itemprop → text regex.
  */
 function extractPhonesFromHtml(html: string): { phones: string[]; method: MatchMethod } {
+  // Cap size to avoid slow processing on bloated pages
+  const content = html.length > 150_000 ? html.slice(0, 150_000) : html;
   const found = new Set<string>();
   let method: MatchMethod = "website_text";
 
   // Priority 1: tel: href links (company-intentional, most reliable)
-  const telMatches = Array.from(html.matchAll(/href=["']tel:([+\d\s\-\.()]{7,20})["']/gi));
-  for (const m of telMatches) {
+  for (const m of Array.from(content.matchAll(/href=["']tel:([+\d\s\-\.()]{7,20})["']/gi))) {
     const phone = normalizePhone(m[1].trim());
     if (phone) { found.add(phone); method = "website_tel_link"; }
   }
 
-  // Priority 2: schema.org / itemprop="telephone"
-  const schemaMatches = Array.from(html.matchAll(/(?:itemprop=["']telephone["'][^>]*>([^<]{7,20})|["']telephone["']\s*:\s*["']([^"']{7,20})["'])/gi));
-  for (const m of schemaMatches) {
+  // Priority 2a: JSON-LD LocalBusiness / Organization — parses <script type="application/ld+json">
+  for (const m of Array.from(content.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi))) {
+    try {
+      const json = JSON.parse(m[1]) as Record<string, unknown>;
+      // Support top-level object, array, or @graph container
+      const entries: Record<string, unknown>[] = Array.isArray(json)
+        ? json as Record<string, unknown>[]
+        : json["@graph"]
+          ? json["@graph"] as Record<string, unknown>[]
+          : [json];
+      for (const entry of entries) {
+        const raw = ((entry.telephone ?? entry.phone ?? "") as string).trim();
+        const phone = normalizePhone(raw);
+        if (phone) {
+          found.add(phone);
+          if (method === "website_text") method = "website_schema";
+        }
+      }
+    } catch { /* malformed JSON-LD — skip */ }
+  }
+
+  // Priority 2b: itemprop="telephone" and inline JSON "telephone": "..."
+  for (const m of Array.from(content.matchAll(/(?:itemprop=["']telephone["'][^>]*>([^<]{7,20})|["']telephone["']\s*:\s*["']([^"']{7,20})["'])/gi))) {
     const raw = (m[1] ?? m[2] ?? "").trim();
     const phone = normalizePhone(raw);
     if (phone) {
@@ -272,13 +308,20 @@ function extractPhonesFromHtml(html: string): { phones: string[]; method: MatchM
     }
   }
 
-  // Priority 3: French phone pattern in stripped text
-  const stripped = html
+  // Priority 3: French phone patterns in stripped text
+  const stripped = content
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
     .replace(/<[^>]+>/g, " ");
-  const textMatches = Array.from(stripped.matchAll(/(?<!\d)(0[1-79](?:[\s.\-]?\d{2}){4})(?!\d)/g));
-  for (const m of textMatches) {
+
+  // Standard format 0X XX XX XX XX — covers landlines (01-05,09) + mobiles (06,07)
+  for (const m of Array.from(stripped.matchAll(/(?<!\d)(0[1-79](?:[\s.\-]?\d{2}){4})(?!\d)/g))) {
+    const phone = normalizePhone(m[1]);
+    if (phone) found.add(phone);
+  }
+
+  // International format +33 X XX XX XX XX — catches mobiles written as +33 6... / +33 7...
+  for (const m of Array.from(stripped.matchAll(/(?<!\d)(\+33[\s.\-]?[1-79](?:[\s.\-]?\d{2}){4})(?!\d)/g))) {
     const phone = normalizePhone(m[1]);
     if (phone) found.add(phone);
   }
@@ -301,7 +344,16 @@ async function scrapeWebsitePhone(
     base = new URL(raw).origin;
   } catch { return null; }
 
-  const pagesToTry = ["", "/contact", "/nous-contacter", "/mentions-legales"];
+  const pagesToTry = [
+    "",
+    "/contact",
+    "/nous-contacter",
+    "/contactez-nous",
+    "/coordonnees",
+    "/a-propos",
+    "/mentions-legales",
+    "/contact.html",
+  ];
 
   for (const path of pagesToTry) {
     const pageUrl = base + path;
@@ -392,6 +444,122 @@ async function enrichWithWebSources(leads: LeadResult[]): Promise<void> {
   for (let i = 0; i < toEnrich.length; i += CONCURRENCY) {
     const chunk = toEnrich.slice(i, i + CONCURRENCY);
     await Promise.all(chunk.map(enrichLeadWithAnnuaire));
+  }
+}
+
+// ─── Google Places enrichment ─────────────────────────────────────────────────
+
+/**
+ * For a lead without a phone, query the Google Places Text Search API.
+ *
+ * Billing: SKU "Text Search (Advanced)" = $30.00 / 1 000 requests.
+ * Triggered because the field mask includes internationalPhoneNumber.
+ *
+ * Match rules (both must pass to avoid false positives):
+ *   1. Postcode from Google addressComponents === lead.code_postal
+ *   2. Name similarity between Google displayName and any lead name ≥ 0.60
+ *
+ * Confidence: 65 + nameSim × 30, capped at 88 (min 83 when nameSim = 0.60).
+ * All results are in the "fiable" or "probable" tier — no uncertain leads.
+ *
+ * Attribution: google_places_id must be persisted (allowed by ToS §3.2.3).
+ * The UI must display "via Google" when phone_source === "google_places".
+ */
+async function findGooglePlacesPhone(
+  lead: LeadResult,
+  apiKey: string
+): Promise<{ phone: string; placeId: string; confidence: number } | null> {
+  if (lead._lat === undefined || lead._lon === undefined) return null;
+
+  const names = lead._names ?? [lead.nom];
+  // Targeted query: primary name + postcode + city for disambiguation
+  const query = `${names[0]} ${lead.code_postal} ${lead.ville}`;
+
+  // Field mask: only what we need. internationalPhoneNumber triggers Advanced SKU.
+  const fieldMask = [
+    "places.id",
+    "places.displayName",
+    "places.internationalPhoneNumber",
+    "places.nationalPhoneNumber",
+    "places.addressComponents",
+  ].join(",");
+
+  try {
+    const resp = await fetch("https://places.googleapis.com/v1/places:searchText", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": apiKey,
+        "X-Goog-FieldMask": fieldMask,
+      },
+      body: JSON.stringify({
+        textQuery: query,
+        locationBias: {
+          circle: {
+            center: { latitude: lead._lat, longitude: lead._lon },
+            radius: 200.0, // 200m around the lead's geocoded address
+          },
+        },
+        maxResultCount: 5,
+        languageCode: "fr",
+        regionCode: "fr",
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (!resp.ok) return null;
+    const data = (await resp.json()) as { places?: GooglePlacesPlace[] };
+    const places = data.places ?? [];
+
+    for (const place of places) {
+      const phone = normalizePhone(
+        place.internationalPhoneNumber ?? place.nationalPhoneNumber ?? ""
+      );
+      if (!phone) continue;
+
+      // Gate 1: postcode must match exactly
+      const placePostcode =
+        place.addressComponents?.find((c) => c.types.includes("postal_code"))?.shortText ?? "";
+      if (placePostcode !== lead.code_postal) continue;
+
+      // Gate 2: name similarity ≥ 0.60 (Jaccard on normalised words)
+      const placeName = place.displayName?.text ?? "";
+      const nameSim = bestNameSimilarity(names, placeName);
+      if (nameSim < 0.60) continue;
+
+      // Confidence: 83–88% (always in the reliable tier)
+      const confidence = Math.min(88, Math.round(65 + nameSim * 30));
+      return { phone, placeId: place.id, confidence };
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Enrich leads that still lack a phone after OSM matching.
+ * Runs with concurrency cap of 5 to stay well within Google's QPS limits.
+ */
+async function enrichWithGooglePlaces(leads: LeadResult[], apiKey: string): Promise<void> {
+  const toEnrich = leads.filter((l) => !l.telephone && l._lat !== undefined);
+  if (!toEnrich.length) return;
+
+  const CONCURRENCY = 5;
+  for (let i = 0; i < toEnrich.length; i += CONCURRENCY) {
+    const chunk = toEnrich.slice(i, i + CONCURRENCY);
+    await Promise.all(
+      chunk.map(async (lead) => {
+        const result = await findGooglePlacesPhone(lead, apiKey);
+        if (!result) return;
+        lead.telephone = result.phone;
+        lead.phone_source = "google_places";
+        lead.phone_confidence = result.confidence;
+        lead.phone_match_method = "google_places_match";
+        lead.google_places_id = result.placeId;
+      })
+    );
   }
 }
 
@@ -611,6 +779,7 @@ function normalizeEntreprise(
     phone_match_method: null,
     phone_secondary: null,
     phone_page_url: null,
+    google_places_id: null,
     email: null,
     site_web: null,
     siret: e.siege.siret ?? null,
@@ -736,6 +905,16 @@ export async function POST(req: NextRequest) {
       new Promise<void>((resolve) => setTimeout(resolve, 22000)),
     ]);
 
+    // 7b. Google Places enrichment — only for leads still without phone
+    // SKU: Text Search (Advanced) = $30.00 / 1 000 requests
+    const googleApiKey = process.env.GOOGLE_PLACES_API_KEY;
+    if (googleApiKey) {
+      await Promise.race([
+        enrichWithGooglePlaces(leads, googleApiKey),
+        new Promise<void>((resolve) => setTimeout(resolve, 22000)),
+      ]);
+    }
+
     // 8. STRICT FILTER — only leads with a valid phone AND reliable match method
     // name_low (confidence 32–48%) is excluded: too weak for prospection
     const exploitable = leads.filter(
@@ -759,6 +938,7 @@ export async function POST(req: NextRequest) {
     response.forEach((l) => {
       if (l.phone_source) bySource[l.phone_source] = (bySource[l.phone_source] ?? 0) + 1;
     });
+    const googlePlacesCalls = response.filter((l) => l.phone_source === "google_places").length;
 
     return NextResponse.json({
       leads: response,
@@ -770,6 +950,7 @@ export async function POST(req: NextRequest) {
       osm_entries_checked: osmEntries.length,
       phone_by_method: byMethod,
       phone_by_source: bySource,
+      google_places_calls: googlePlacesCalls,
     });
   } catch (err) {
     console.error("[leads/search]", err);

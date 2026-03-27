@@ -5,7 +5,7 @@ import {
   X, Sparkles, Send, RotateCcw, ChevronRight, User, Bot,
   AlertCircle, FileText, Receipt, HardHat, Users, Clock,
   Bell, Loader2, Mail, StickyNote, CheckCircle2, RefreshCcw,
-  TrendingUp, Zap, Lock,
+  TrendingUp, Zap, Lock, BellRing, ListChecks, MessageSquareText,
 } from "lucide-react";
 import Link from "next/link";
 import { clsx } from "clsx";
@@ -333,9 +333,10 @@ export default function AgentPanel() {
     error, usage, closeAgent, sendMessage, clearMessages,
   } = useAgent();
 
-  const [input,       setInput]       = useState("");
-  const [suggestions, setSuggestions] = useState<AgentSuggestion[]>([]);
-  const [sugLoaded,   setSugLoaded]   = useState(false);
+  const [input,         setInput]         = useState("");
+  const [suggestions,   setSuggestions]   = useState<AgentSuggestion[]>([]);
+  const [sugLoaded,     setSugLoaded]     = useState(false);
+  const [bulkLoading,   setBulkLoading]   = useState<string | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef  = useRef<HTMLTextAreaElement>(null);
@@ -370,6 +371,26 @@ export default function AgentPanel() {
 
   const handleKey = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+  };
+
+  const handleBulkAction = async (action: string, prompt: string) => {
+    setBulkLoading(action);
+    try {
+      const res = await fetch("/api/agent/actions/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const json = await res.json();
+      const enrichedPrompt = json.ok
+        ? `${prompt}\n\nDonnées récupérées : ${json.summary}. ${json.count > 0 ? `Éléments : ${JSON.stringify(json.items?.slice(0, 5))}` : "Aucun élément trouvé."}`
+        : prompt;
+      sendMessage(enrichedPrompt);
+    } catch {
+      sendMessage(prompt);
+    } finally {
+      setBulkLoading(null);
+    }
   };
 
   const quickActions   = QUICK_ACTIONS[context?.type ?? "general"] ?? QUICK_ACTIONS.general;
@@ -498,6 +519,48 @@ export default function AgentPanel() {
                         <p className="text-[10px] text-text-muted mt-0.5">{s.detail}</p>
                       </div>
                       <ChevronRight className="w-3.5 h-3.5 text-text-muted flex-shrink-0 mt-0.5 group-hover:text-status-warning transition-colors" />
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Global bulk actions — shown only on general context */}
+              {(!context || context.type === "general") && (
+                <div className="space-y-2">
+                  <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wider px-1">Actions globales</p>
+                  {[
+                    {
+                      key: "relancer_impayes",
+                      label: "Relancer les impayés",
+                      icon: BellRing,
+                      prompt: "Identifie toutes les factures impayées et rédige des messages de relance personnalisés pour chacune.",
+                    },
+                    {
+                      key: "actions_urgentes",
+                      label: "Actions urgentes",
+                      icon: ListChecks,
+                      prompt: "Identifie les actions les plus urgentes dans mon CRM (factures en retard, devis expirés) et propose un plan d'action.",
+                    },
+                    {
+                      key: "preparer_relances",
+                      label: "Préparer les relances",
+                      icon: MessageSquareText,
+                      prompt: "Prépare des messages de relance professionnels pour les factures non payées, en les priorisant par montant et ancienneté.",
+                    },
+                  ].map((a) => (
+                    <button key={a.key}
+                      onClick={() => handleBulkAction(a.key, a.prompt)}
+                      disabled={isLoading || !!bulkLoading}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary/5 border border-primary/20 hover:bg-primary/10 hover:border-primary/40 transition-all text-left group"
+                    >
+                      {bulkLoading === a.key
+                        ? <Loader2 className="w-3.5 h-3.5 text-primary animate-spin flex-shrink-0" />
+                        : <a.icon className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+                      }
+                      <span className="text-xs font-medium text-text-primary group-hover:text-primary transition-colors flex-1">
+                        {a.label}
+                      </span>
+                      <ChevronRight className="w-3.5 h-3.5 text-text-muted flex-shrink-0 group-hover:text-primary transition-colors" />
                     </button>
                   ))}
                 </div>

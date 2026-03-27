@@ -98,6 +98,8 @@ export type DevisRow = {
   acompte: number;
   chorus_pro: boolean;
   pdf_url: string | null;
+  facture_id: string | null;
+  bon_commande_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -107,6 +109,8 @@ export type FactureRow = {
   user_id: string;
   client_id: string;
   devis_id: string | null;
+  pro_forma_id: string | null;
+  bon_livraison_id: string | null;
   numero: string;
   statut: FactureStatut;
   objet: string;
@@ -339,6 +343,7 @@ export type BonCommandeStatut = "brouillon" | "envoye" | "confirme" | "annule";
 export type BonDeCommandeRow = {
   id:                   string;
   user_id:              string;
+  devis_id:             string | null;
   numero:               string;
   client_nom:           string;
   client_email:         string | null;
@@ -369,9 +374,10 @@ export type BonLivraisonLigne = {
 }
 
 export type BonDeLivraisonRow = {
-  id:             string;
-  user_id:        string;
-  numero:         string;
+  id:              string;
+  user_id:         string;
+  bon_commande_id: string | null;
+  numero:          string;
   client_nom:     string;
   client_email:   string | null;
   objet:          string;
@@ -382,6 +388,29 @@ export type BonDeLivraisonRow = {
   notes:          string | null;
   created_at:     string;
   updated_at:     string;
+}
+
+// ─── Document sequences ──────────────────────────────────────────────────────
+
+export type DocumentSequenceRow = {
+  id:             string;
+  user_id:        string;
+  type:           string;
+  year:           number;
+  current_number: number;
+  created_at:     string;
+}
+
+// ─── Agent actions log ───────────────────────────────────────────────────────
+
+export type AgentActionLogRow = {
+  id:          string;
+  user_id:     string;
+  action_type: string;
+  target_type: string | null;
+  target_id:   string | null;
+  metadata:    Record<string, unknown> | null;
+  created_at:  string;
 }
 
 export type AutomatisationConfig = {
@@ -970,11 +999,42 @@ export type Database = {
           }
         ];
       };
-    };
+      document_sequences: {
+        Row: DocumentSequenceRow;
+        Insert: {
+          id?:             string;
+          user_id:         string;
+          type:            string;
+          year:            number;
+          current_number?: number;
+          created_at?:     string;
+        };
+        Update: Partial<Omit<DocumentSequenceRow, "id" | "created_at">>;
+        Relationships: [];
+      };
+      agent_actions_log: {
+        Row: AgentActionLogRow;
+        Insert: {
+          id?:          string;
+          user_id:      string;
+          action_type:  string;
+          target_type?: string | null;
+          target_id?:   string | null;
+          metadata?:    Record<string, unknown> | null;
+          created_at?:  string;
+        };
+        Update: Partial<Omit<AgentActionLogRow, "id" | "created_at">>;
+        Relationships: [];
+      };
+    }; // end Tables
     Views: Record<never, never>;
     Functions: {
       increment_agent_usage: {
         Args: { p_user_id: string; p_year_month: string };
+        Returns: number;
+      };
+      get_next_document_number: {
+        Args: { p_user_id: string; p_type: string; p_year: number };
         Returns: number;
       };
     };

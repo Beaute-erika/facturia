@@ -66,6 +66,7 @@ export async function POST(req: NextRequest) {
         phone_secondary: l.phone_secondary ?? null,
         phone_match_method: l.phone_match_method ?? null,
         phone_page_url: l.phone_page_url ?? null,
+        google_places_id: l.google_places_id ?? null,
         email: l.email,
         site_web: l.site_web,
         siret: l.siret,

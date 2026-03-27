@@ -1,28 +1,53 @@
 "use client";
 
-import { Receipt, CheckCircle2, ArrowRight, X, Calendar, FileText } from "lucide-react";
+import { useState } from "react";
+import { Receipt, CheckCircle2, ArrowRight, X, Calendar, FileText, Loader2 } from "lucide-react";
 import Button from "@/components/ui/Button";
 
 interface ConvertToFactureModalProps {
   devis: {
-    id: string;
-    client: string;
-    objet: string;
+    id:      string;   // numero display (DV-...)
+    _uuid?:  string;   // DB uuid
+    client:  string;
+    objet:   string;
     montant: string;
   };
   onClose: () => void;
-  onConfirm: (factureId: string) => void;
+  onConfirm: (factureNumero: string) => void;
 }
 
 export default function ConvertToFactureModal({ devis, onClose, onConfirm }: ConvertToFactureModalProps) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState<string | null>(null);
+
   const today = new Date();
   const echeance = new Date(today);
   echeance.setDate(echeance.getDate() + 30);
   const fmt = (d: Date) =>
     d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
 
-  // Generate invoice ID from devis ID
-  const factureId = devis.id.replace("DV-", "FA-");
+  const handleConvert = async () => {
+    if (!devis._uuid) {
+      setError("UUID du devis manquant");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/documents/convert/devis-to-facture", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ devis_id: devis._uuid }),
+      });
+      const json = await res.json();
+      if (!res.ok) { setError(json.error ?? "Erreur"); return; }
+      onConfirm(json.numero);
+    } catch {
+      setError("Erreur réseau");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -36,7 +61,7 @@ export default function ConvertToFactureModal({ devis, onClose, onConfirm }: Con
           </div>
           <div className="flex-1">
             <h2 className="font-semibold text-text-primary">Convertir en facture</h2>
-            <p className="text-xs text-text-muted">Le devis sera clôturé</p>
+            <p className="text-xs text-text-muted">Le devis sera clôturé (accepté)</p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors">
             <X className="w-4 h-4" />
@@ -46,7 +71,6 @@ export default function ConvertToFactureModal({ devis, onClose, onConfirm }: Con
         <div className="p-5 space-y-4">
           {/* Devis → Facture visual */}
           <div className="flex items-center gap-3">
-            {/* Devis */}
             <div className="flex-1 p-3 rounded-xl bg-background border border-surface-border">
               <div className="flex items-center gap-2 mb-2">
                 <FileText className="w-3.5 h-3.5 text-text-muted" />
@@ -58,13 +82,12 @@ export default function ConvertToFactureModal({ devis, onClose, onConfirm }: Con
 
             <ArrowRight className="w-5 h-5 text-primary flex-shrink-0" />
 
-            {/* Facture */}
             <div className="flex-1 p-3 rounded-xl bg-primary/5 border border-primary/20">
               <div className="flex items-center gap-2 mb-2">
                 <Receipt className="w-3.5 h-3.5 text-primary" />
                 <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Facture</span>
               </div>
-              <p className="font-mono text-sm font-bold text-primary">{factureId}</p>
+              <p className="font-mono text-sm font-bold text-primary">Auto-numérotée</p>
               <p className="text-xs text-text-muted mt-0.5 truncate">{devis.client}</p>
             </div>
           </div>
@@ -79,52 +102,23 @@ export default function ConvertToFactureModal({ devis, onClose, onConfirm }: Con
               <span className="text-text-muted">Montant HT</span>
               <span className="font-semibold font-mono text-text-primary">{devis.montant}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-text-muted">TVA (10%)</span>
-              <span className="font-mono text-text-secondary">
-                {(parseFloat(devis.montant.replace(/[^0-9]/g, "")) * 0.1).toLocaleString("fr-FR")} €
-              </span>
-            </div>
-            <div className="flex justify-between border-t border-surface-border pt-2">
-              <span className="font-semibold text-text-primary">Total TTC</span>
-              <span className="font-bold font-mono text-primary">
-                {(parseFloat(devis.montant.replace(/[^0-9]/g, "")) * 1.1).toLocaleString("fr-FR")} €
-              </span>
-            </div>
           </div>
 
           {/* Dates */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                <Calendar className="w-3 h-3" /> Date de facture
-              </label>
-              <input
-                type="text"
-                defaultValue={fmt(today)}
-                className="input-field w-full text-sm"
-              />
+          <div className="grid grid-cols-2 gap-3 text-xs text-text-muted">
+            <div className="flex items-center gap-1.5">
+              <Calendar className="w-3 h-3" />
+              <span>Émission : {fmt(today)}</span>
             </div>
-            <div>
-              <label className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                <Calendar className="w-3 h-3" /> Échéance
-              </label>
-              <input
-                type="text"
-                defaultValue={fmt(echeance)}
-                className="input-field w-full text-sm"
-              />
+            <div className="flex items-center gap-1.5">
+              <Calendar className="w-3 h-3" />
+              <span>Échéance : {fmt(echeance)}</span>
             </div>
           </div>
 
-          {/* Chorus Pro option */}
-          <label className="flex items-center gap-3 p-3 rounded-xl bg-background border border-surface-border cursor-pointer hover:border-primary/30 transition-colors group">
-            <input type="checkbox" className="w-4 h-4 accent-[#00c97a]" />
-            <div>
-              <p className="text-sm font-medium text-text-primary">Déposer sur Chorus Pro</p>
-              <p className="text-xs text-text-muted">Envoi automatique pour les clients publics</p>
-            </div>
-          </label>
+          {error && (
+            <p className="text-xs text-red-500 bg-red-500/10 rounded-lg px-3 py-2">{error}</p>
+          )}
 
           <div className="flex gap-2 pt-1">
             <button onClick={onClose} className="btn-ghost flex-1 text-center py-2.5 rounded-xl border border-surface-border text-sm">
@@ -132,11 +126,12 @@ export default function ConvertToFactureModal({ devis, onClose, onConfirm }: Con
             </button>
             <Button
               variant="primary"
-              icon={CheckCircle2}
-              onClick={() => onConfirm(factureId)}
+              icon={loading ? Loader2 : CheckCircle2}
+              onClick={handleConvert}
+              disabled={loading}
               className="flex-1 justify-center"
             >
-              Créer la facture
+              {loading ? "Création…" : "Créer la facture"}
             </Button>
           </div>
         </div>

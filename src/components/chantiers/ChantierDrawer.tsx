@@ -5,11 +5,12 @@ import {
   X, MapPin, Calendar, Users, FileText, Receipt,
   Plus, Trash2, CheckSquare, Square, StickyNote,
   TrendingUp, AlertTriangle, ChevronRight, HardHat,
-  Pencil, Check,
+  Pencil, Check, Sparkles,
 } from "lucide-react";
 import { clsx } from "clsx";
 import type { Chantier, ChantierStatus } from "@/lib/chantiers-data";
 import Badge from "@/components/ui/Badge";
+import { useAgent } from "@/components/agent/AgentContext";
 
 interface ChantierDrawerProps {
   chantier: Chantier;
@@ -48,6 +49,7 @@ const DEP_CATEGORY: Record<string, string> = {
 };
 
 export default function ChantierDrawer({ chantier, onClose, onUpdate }: ChantierDrawerProps) {
+  const { openAgent } = useAgent();
   const [tab, setTab] = useState<Tab>("détails");
   const [addingNote, setAddingNote] = useState(false);
   const [newNote, setNewNote] = useState("");
@@ -179,8 +181,8 @@ export default function ChantierDrawer({ chantier, onClose, onUpdate }: Chantier
             </div>
           </div>
 
-          {/* Status changer */}
-          <div className="flex gap-1 mt-3">
+          {/* Status changer + AI button */}
+          <div className="flex gap-1 mt-3 items-center">
             {(["planifié", "en cours", "en pause", "terminé"] as ChantierStatus[]).map((s) => (
               <button
                 key={s}
@@ -195,6 +197,31 @@ export default function ChantierDrawer({ chantier, onClose, onUpdate }: Chantier
                 {s}
               </button>
             ))}
+            <button
+              onClick={() => openAgent({
+                type: "chantier",
+                label: `${chantier.client} — ${chantier.type}`,
+                data: {
+                  id: chantier.id,
+                  client: chantier.client,
+                  type: chantier.type,
+                  status: chantier.status,
+                  progression: chantier.progression,
+                  budget: chantier.budget,
+                  depenses: chantier.depenses,
+                  startDate: chantier.startDate,
+                  endDate: chantier.endDate,
+                  description: chantier.description,
+                  etapes: chantier.etapes.map((e) => ({ label: e.label, done: e.done, category: e.category, dueDate: e.dueDate })),
+                  notes: chantier.notes.map((n) => ({ content: n.content, date: n.date })),
+                }
+              })}
+              className="ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/15 text-primary hover:bg-primary/20 transition-all text-[11px] font-semibold"
+              title="Demander à l'IA"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              IA
+            </button>
           </div>
         </div>
 

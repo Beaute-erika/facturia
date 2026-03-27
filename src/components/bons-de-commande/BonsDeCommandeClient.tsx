@@ -2,11 +2,13 @@
 
 import { useState, useMemo, useCallback, useEffect } from "react";
 import {
-  ClipboardList, Plus, Search, Pencil, Trash2, Loader2, X,
+  ClipboardList, Plus, Search, Pencil, Trash2, Loader2, X, Download, Truck as TruckIcon,
   AlertCircle, ChevronDown, CalendarDays,
 } from "lucide-react";
 import { clsx } from "clsx";
-import type { BonDeCommandeRow } from "@/lib/database.types";
+import type { BonDeCommandeRow, LigneDevis } from "@/lib/database.types";
+import { createBrowserClient } from "@/lib/supabase-client";
+import { generateDocumentPDF } from "@/lib/pdf-documents";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -187,8 +189,9 @@ function BonCommandeModal({ initial, title, onClose, onSubmit, saving }: {
 
 // ─── Row ──────────────────────────────────────────────────────────────────────
 
-function BonCommandeRow({ item, onEdit, onDelete, deleting }: {
-  item: BonDeCommandeRow; onEdit: () => void; onDelete: () => void; deleting: boolean;
+function BonCommandeRow({ item, onEdit, onDelete, onPdf, onConvert, deleting, converting }: {
+  item: BonDeCommandeRow; onEdit: () => void; onDelete: () => void;
+  onPdf: () => void; onConvert: () => void; deleting: boolean; converting: boolean;
 }) {
   return (
     <div className="group flex items-center gap-4 px-4 py-3 bg-background border border-surface-border rounded-xl hover:border-primary/30 transition-colors">
@@ -210,6 +213,10 @@ function BonCommandeRow({ item, onEdit, onDelete, deleting }: {
         <p className="text-[10px] text-text-muted">{new Date(item.date_emission).toLocaleDateString("fr-FR")}</p>
       </div>
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+        <button type="button" onClick={onPdf} className="p-1.5 rounded-lg text-text-muted hover:text-primary hover:bg-primary/10 transition-colors" title="Télécharger PDF"><Download className="w-3.5 h-3.5" /></button>
+        <button type="button" onClick={onConvert} disabled={converting || item.statut === "confirme"} className="p-1.5 rounded-lg text-text-muted hover:text-status-success hover:bg-status-success/10 transition-colors disabled:opacity-40" title="Créer bon de livraison">
+          {converting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <TruckIcon className="w-3.5 h-3.5" />}
+        </button>
         <button type="button" onClick={onEdit} className="p-1.5 rounded-lg text-text-muted hover:text-primary hover:bg-primary/10 transition-colors" title="Modifier"><Pencil className="w-3.5 h-3.5" /></button>
         <button type="button" onClick={onDelete} disabled={deleting} className="p-1.5 rounded-lg text-text-muted hover:text-status-error hover:bg-status-error/10 transition-colors disabled:opacity-50" title="Supprimer">
           {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
@@ -222,13 +229,27 @@ function BonCommandeRow({ item, onEdit, onDelete, deleting }: {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function BonsDeCommandeClient() {
-  const [items,     setItems]     = useState<BonDeCommandeRow[]>([]);
-  const [loading,   setLoading]   = useState(true);
-  const [search,    setSearch]    = useState("");
-  const [showModal, setShowModal] = useState<"create" | BonDeCommandeRow | null>(null);
-  const [saving,    setSaving]    = useState(false);
-  const [deleting,  setDeleting]  = useState<string | null>(null);
-  const [error,     setError]     = useState<string | null>(null);
+  const [items,      setItems]      = useState<BonDeCommandeRow[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [search,     setSearch]     = useState("");
+  const [showModal,  setShowModal]  = useState<"create" | BonDeCommandeRow | null>(null);
+  const [saving,     setSaving]     = useState(false);
+  const [deleting,   setDeleting]   = useState<string | null>(null);
+  const [converting, setConverting] = useState<string | null>(null);
+  const [error,      setError]      = useState<string | null>(null);
+  const [toast,      setToast]      = useState<string | null>(null);
+  const [artisan,    setArtisan]    = useState<{ nom: string; adresse?: string; siret?: string; email?: string; tel?: string }>({ nom: "" });
+
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3500); };
+
+  useEffect(() => {
+    const sb = createBrowserClient();
+    sb.auth.getUser().then(({ data }) => {
+      if (!data.user) return;
+      sb.from("users").select("prenom, nom, adresse, siret, email, tel").eq("id", data.user.id).single()
+        .then(({ data: u }) => { if (u) setArtisan({ nom: `${u.prenom} ${u.nom}`, adresse: u.adresse ?? undefined, siret: u.siret ?? undefined, email: u.email, tel: u.tel ?? undefined }); });
+    });
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -293,6 +314,39 @@ export default function BonsDeCommandeClient() {
     finally { setSaving(false); }
   };
 
+  const handlePdf = (item: BonDeCommandeRow) => {
+    generateDocumentPDF({
+      type: "Bon de commande",
+      numero: item.numero ?? "BC",
+      client_nom: item.client_nom,
+      client_email: item.client_email,
+      objet: item.objet,
+      date: new Date(item.date_emission).toLocaleDateString("fr-FR"),
+      notes: item.notes,
+      lignes: item.lignes as LigneDevis[],
+      montant_ht: item.montant_ht,
+      montant_tva: item.montant_tva,
+      montant_ttc: item.montant_ttc,
+      artisan,
+    });
+  };
+
+  const handleConvert = async (item: BonDeCommandeRow) => {
+    if (!confirm(`Créer un bon de livraison depuis "${item.numero}" ?`)) return;
+    setConverting(item.id);
+    try {
+      const res = await fetch("/api/documents/convert/bon-commande-to-livraison", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bon_commande_id: item.id }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+      setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, statut: "confirme" as const } : i));
+      showToast(`Bon de livraison ${json.numero} créé`);
+    } catch (e) { setError(e instanceof Error ? e.message : "Erreur"); }
+    finally { setConverting(null); }
+  };
+
   const handleDelete = async (id: string) => {
     if (!confirm("Supprimer ce bon de commande ?")) return;
     setDeleting(id);
@@ -355,7 +409,7 @@ export default function BonsDeCommandeClient() {
             </div>
           ) : (
             <div className="space-y-2">
-              {filtered.map((item) => <BonCommandeRow key={item.id} item={item} onEdit={() => setShowModal(item)} onDelete={() => handleDelete(item.id)} deleting={deleting === item.id} />)}
+              {filtered.map((item) => <BonCommandeRow key={item.id} item={item} onEdit={() => setShowModal(item)} onDelete={() => handleDelete(item.id)} onPdf={() => handlePdf(item)} onConvert={() => handleConvert(item)} deleting={deleting === item.id} converting={converting === item.id} />)}
             </div>
           )}
         </div>
@@ -363,6 +417,11 @@ export default function BonsDeCommandeClient() {
 
       {showModal === "create" && <BonCommandeModal initial={EMPTY_FORM()} title="Nouveau bon de commande" onClose={() => setShowModal(null)} onSubmit={handleCreate} saving={saving} />}
       {showModal !== null && showModal !== "create" && <BonCommandeModal initial={editInitial(showModal)} title="Modifier le bon de commande" onClose={() => setShowModal(null)} onSubmit={handleEdit} saving={saving} />}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-surface border border-primary/30 text-sm font-medium text-text-primary shadow-card animate-fade-in">
+          {toast}
+        </div>
+      )}
     </>
   );
 }

@@ -38,6 +38,7 @@ interface LeadResult {
   phone_secondary: string | null;
   phone_match_method: string | null;
   phone_page_url: string | null;
+  google_places_id: string | null;
   email: string | null;
   site_web: string | null;
   siret: string | null;
@@ -199,8 +200,14 @@ function LeadCard({ lead }: { lead: LeadResult }) {
                   title={`Source: ${lead.phone_source} — Méthode: ${lead.phone_match_method ?? ""}`}
                 >
                   {lead.phone_source === "openstreetmap" ? "OSM" :
+                   lead.phone_source === "google_places" ? "Google" :
                    lead.phone_source === "annuaire-entreprises" ? "Registre" :
                    lead.phone_source === "website" ? "Site web" : lead.phone_source}
+                </span>
+              )}
+              {lead.phone_source === "google_places" && (
+                <span className="text-[10px] text-text-muted italic">
+                  Powered by Google
                 </span>
               )}
               {lead.phone_page_url && (

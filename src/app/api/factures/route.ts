@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase-server";
+import { generateDocumentNumber } from "@/lib/document-sequences";
 
 const STATUT_MAP: Record<string, string> = {
   brouillon: "brouillon",
@@ -52,8 +53,10 @@ export async function POST(req: Request) {
     const montant_ht  = htNet;
     const montant_ttc = htNet + montant_tva;
 
-    if (!client_nom || !objet || !numero) {
-      return NextResponse.json({ error: "Champs requis manquants (client_nom, objet, numero)" }, { status: 400 });
+    const resolvedNumero = (numero as string | undefined)?.trim() || await generateDocumentNumber(supabase, user.id, "factures");
+
+    if (!client_nom || !objet) {
+      return NextResponse.json({ error: "Champs requis manquants (client_nom, objet)" }, { status: 400 });
     }
 
     // Résoudre client_id : utiliser celui fourni, sinon chercher/créer
@@ -96,7 +99,7 @@ export async function POST(req: Request) {
       .insert({
         user_id: user.id,
         client_id: resolvedClientId,
-        numero,
+        numero: resolvedNumero,
         objet: objet.trim(),
         date_emission: date_emission ?? new Date().toISOString().split("T")[0],
         date_echeance: date_echeance ?? null,

@@ -35,18 +35,25 @@ function parseStreet(addr){return addr.replace(/^\d+\s*(?:BIS|TER|QUATER)?\s+/i,
 function computeConfidence(method,distM,nameSim){switch(method){case"address_exact":return Math.max(80,Math.min(92,92-Math.round(distM/10)));case"address_cp":return Math.max(75,Math.min(85,85-Math.round(distM/12)));case"address_proximity":return Math.max(74,Math.min(80,80-Math.round(distM/5)));case"name_high":return Math.max(68,Math.min(85,Math.round((1-distM/200)*40+nameSim*45)));case"name_medium":return Math.max(48,Math.min(68,Math.round((1-distM/200)*30+nameSim*38)));case"name_low":return Math.max(32,Math.min(48,Math.round((1-distM/200)*20+nameSim*28)));case"official_registry":return 95;case"website_tel_link":return 85;case"website_schema":return 82;case"website_text":return 65;}}
 
 function extractPhonesFromHtml(html){
+  const content=html.length>150000?html.slice(0,150000):html;
   const found=new Set();let method="website_text";
-  for(const m of Array.from(html.matchAll(/href=["']tel:([+\d\s\-\.()]{7,20})["']/gi))){const p=normalizePhone(m[1].trim());if(p){found.add(p);method="website_tel_link";}}
-  for(const m of Array.from(html.matchAll(/(?:itemprop=["']telephone["'][^>]*>([^<]{7,20})|["']telephone["']\s*:\s*["']([^"']{7,20})["'])/gi))){const raw=(m[1]??m[2]??"").trim();const p=normalizePhone(raw);if(p){found.add(p);if(method==="website_text")method="website_schema";}}
-  const stripped=html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi," ").replace(/<script[^>]*>[\s\S]*?<\/script>/gi," ").replace(/<[^>]+>/g," ");
+  // Priority 1: tel: links
+  for(const m of Array.from(content.matchAll(/href=["']tel:([+\d\s\-\.()]{7,20})["']/gi))){const p=normalizePhone(m[1].trim());if(p){found.add(p);method="website_tel_link";}}
+  // Priority 2a: JSON-LD LocalBusiness
+  for(const m of Array.from(content.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi))){try{const json=JSON.parse(m[1]);const entries=Array.isArray(json)?json:(json["@graph"]?json["@graph"]:[json]);for(const e of entries){const raw=((e.telephone??e.phone??"")).trim();const p=normalizePhone(raw);if(p){found.add(p);if(method==="website_text")method="website_schema";}}}catch{}}
+  // Priority 2b: itemprop + inline JSON
+  for(const m of Array.from(content.matchAll(/(?:itemprop=["']telephone["'][^>]*>([^<]{7,20})|["']telephone["']\s*:\s*["']([^"']{7,20})["'])/gi))){const raw=(m[1]??m[2]??"").trim();const p=normalizePhone(raw);if(p){found.add(p);if(method==="website_text")method="website_schema";}}
+  // Priority 3: text regex
+  const stripped=content.replace(/<style[^>]*>[\s\S]*?<\/style>/gi," ").replace(/<script[^>]*>[\s\S]*?<\/script>/gi," ").replace(/<[^>]+>/g," ");
   for(const m of Array.from(stripped.matchAll(/(?<!\d)(0[1-79](?:[\s.\-]?\d{2}){4})(?!\d)/g))){const p=normalizePhone(m[1]);if(p)found.add(p);}
+  for(const m of Array.from(stripped.matchAll(/(?<!\d)(\+33[\s.\-]?[1-79](?:[\s.\-]?\d{2}){4})(?!\d)/g))){const p=normalizePhone(m[1]);if(p)found.add(p);}
   return{phones:Array.from(found),method};
 }
 
 async function scrapeWebsitePhone(siteUrl){
   let base;
   try{const raw=siteUrl.startsWith("http")?siteUrl:`https://${siteUrl}`;base=new URL(raw).origin;}catch{return null;}
-  for(const path of[""," /contact","/nous-contacter","/mentions-legales"]){
+  for(const path of["","/contact","/nous-contacter","/contactez-nous","/coordonnees","/a-propos","/mentions-legales","/contact.html"]){
     const pageUrl=base+path.trim();
     try{
       const resp=await fetch(pageUrl,{headers:{"User-Agent":"Mozilla/5.0 (compatible; Facturia/2.0)",Accept:"text/html"},signal:AbortSignal.timeout(5000),redirect:"follow"});
@@ -84,6 +91,50 @@ async function enrichWithWebSources(leads){
   for(let i=0;i<toEnrich.length;i+=CONCURRENCY){
     const chunk=toEnrich.slice(i,i+CONCURRENCY);
     await Promise.all(chunk.map(enrichLeadWithAnnuaire));
+  }
+}
+
+// ─── Google Places enrichment ──────────────────────────────────────────────────
+async function findGooglePlacesPhone(lead,apiKey){
+  if(lead._lat===undefined||lead._lon===undefined)return null;
+  const names=lead._names??[lead.nom];
+  const query=`${names[0]} ${lead.code_postal} ${lead.ville}`;
+  const fieldMask="places.id,places.displayName,places.internationalPhoneNumber,places.nationalPhoneNumber,places.addressComponents";
+  try{
+    const resp=await fetch("https://places.googleapis.com/v1/places:searchText",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","X-Goog-Api-Key":apiKey,"X-Goog-FieldMask":fieldMask},
+      body:JSON.stringify({textQuery:query,locationBias:{circle:{center:{latitude:lead._lat,longitude:lead._lon},radius:200.0}},maxResultCount:5,languageCode:"fr",regionCode:"fr"}),
+      signal:AbortSignal.timeout(5000)
+    });
+    if(!resp.ok)return null;
+    const data=await resp.json();
+    const places=data.places??[];
+    for(const place of places){
+      const phone=normalizePhone(place.internationalPhoneNumber??place.nationalPhoneNumber??"");
+      if(!phone)continue;
+      const placePostcode=place.addressComponents?.find(c=>c.types.includes("postal_code"))?.shortText??"";
+      if(placePostcode!==lead.code_postal)continue;
+      const placeName=place.displayName?.text??"";
+      const nameSim=bestNameSimilarity(names,placeName);
+      if(nameSim<0.60)continue;
+      return{phone,placeId:place.id,confidence:Math.min(88,Math.round(65+nameSim*30))};
+    }
+    return null;
+  }catch{return null;}
+}
+
+async function enrichWithGooglePlaces(leads,apiKey){
+  const toEnrich=leads.filter(l=>!l.telephone&&l._lat!==undefined);
+  if(!toEnrich.length)return;
+  const CONCURRENCY=5;
+  for(let i=0;i<toEnrich.length;i+=CONCURRENCY){
+    const chunk=toEnrich.slice(i,i+CONCURRENCY);
+    await Promise.all(chunk.map(async lead=>{
+      const result=await findGooglePlacesPhone(lead,apiKey);
+      if(!result)return;
+      lead.telephone=result.phone;lead.phone_source="google_places";lead.phone_confidence=result.confidence;lead.phone_match_method="google_places_match";lead.google_places_id=result.placeId;
+    }));
   }
 }
 
@@ -205,9 +256,23 @@ async function runSearch(label, adresse, metier, rayon_km) {
     enrichWithWebSources(leads),
     new Promise(r=>setTimeout(r,22000)),
   ]);
-  const t3=Date.now();
   const afterWeb=leads.filter(l=>l.telephone).length;
-  console.log(`🌐 Web enrichment: +${afterWeb-afterOSM} nouveaux en ${t3-t2}ms`);
+  console.log(`🌐 Web enrichment: +${afterWeb-afterOSM} nouveaux en ${Date.now()-t2}ms`);
+
+  // Google Places enrichment
+  const t3=Date.now();
+  const googleApiKey=process.env.GOOGLE_PLACES_API_KEY;
+  if(googleApiKey){
+    await Promise.race([
+      enrichWithGooglePlaces(leads,googleApiKey),
+      new Promise(r=>setTimeout(r,22000)),
+    ]);
+  }else{
+    console.log(`🔑 GOOGLE_PLACES_API_KEY non définie — enrichissement Google Places ignoré`);
+  }
+  const t4=Date.now();
+  const afterGoogle=leads.filter(l=>l.telephone).length;
+  if(googleApiKey)console.log(`🔵 Google Places: +${afterGoogle-afterWeb} nouveaux en ${t4-t3}ms`);
 
   // Strict filter — phone required + name_low excluded (confidence 32–48%, not reliable enough)
   const exploitable=leads.filter(l=>l.telephone!==null&&l.phone_match_method!=="name_low");
@@ -230,10 +295,11 @@ async function runSearch(label, adresse, metier, rayon_km) {
   console.log(`   Fiable  (≥80%):              ${highConf}`);
   console.log(`   Probable (55-79%):           ${medConf}`);
   console.log(`   Incertain (<55%):            ${lowConf}`);
-  console.log(`   Sources: OSM=${bySource.openstreetmap??0}, Registre=${bySource["annuaire-entreprises"]??0}, Site=${bySource.website??0}`);
+  console.log(`   Sources: OSM=${bySource.openstreetmap??0}, Google=${bySource.google_places??0}, Registre=${bySource["annuaire-entreprises"]??0}, Site=${bySource.website??0}`);
   console.log(`   Méthodes OSM: addr_exact=${byMethod.address_exact??0}, addr_cp=${byMethod.address_cp??0}, addr_prox=${byMethod.address_proximity??0}, name_high=${byMethod.name_high??0}, name_med=${byMethod.name_medium??0}, name_low=${byMethod.name_low??0}`);
   console.log(`   Méthodes Web: registry=${byMethod.official_registry??0}, tel_link=${byMethod.website_tel_link??0}, schema=${byMethod.website_schema??0}, text=${byMethod.website_text??0}`);
-  console.log(`   Durée totale: ${t3-t0}ms`);
+  console.log(`   Google Places: ${byMethod.google_places_match??0} leads`);
+  console.log(`   Durée totale: ${t4-t0}ms`);
 
   console.log(`\n🔎 5 PREMIERS EXEMPLES:`);
   withPhone.slice(0,5).forEach((l,i)=>{

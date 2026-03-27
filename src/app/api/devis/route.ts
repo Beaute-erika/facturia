@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, supabaseAdmin } from "@/lib/supabase-server";
+import { generateDocumentNumber } from "@/lib/document-sequences";
 
 const STATUT_MAP: Record<string, string> = {
   brouillon: "brouillon",
@@ -93,7 +94,9 @@ export async function POST(req: NextRequest) {
     const montant_ht  = htNet;
     const montant_ttc = htNet + montant_tva;
 
-    if (!client_nom || !objet || !numero) {
+    const resolvedNumero = (numero as string | undefined)?.trim() || await generateDocumentNumber(supabase, user.id, "devis");
+
+    if (!client_nom || !objet) {
       return NextResponse.json({ error: "Champs requis manquants" }, { status: 400 });
     }
 
@@ -168,7 +171,7 @@ export async function POST(req: NextRequest) {
       .insert({
         user_id: user.id,
         client_id: clientId,
-        numero,
+        numero: resolvedNumero,
         statut: "brouillon",
         objet,
         date_emission,
