@@ -95,11 +95,21 @@ export async function PATCH(
     if (body.auto_send_chorus    !== undefined) updates.auto_send_chorus    = Boolean(body.auto_send_chorus);
     if (body.objet               !== undefined) updates.objet               = body.objet;
     if (body.notes               !== undefined) updates.notes               = body.notes;
-    if (body.statut              !== undefined) updates.statut              = STATUT_DB[body.statut] ?? body.statut;
     if (body.client_id           !== undefined) updates.client_id           = body.client_id;
     if (body.date_emission       !== undefined) updates.date_emission       = body.date_emission;
     if (body.date_echeance       !== undefined) updates.date_echeance       = body.date_echeance;
+    if (body.date_paiement       !== undefined) updates.date_paiement       = body.date_paiement;
     if (body.conditions_paiement !== undefined) updates.conditions_paiement = body.conditions_paiement ?? null;
+
+    // Statut : mapping display → DB + auto date_paiement si passage à "payee"
+    if (body.statut !== undefined) {
+      const statutDB = STATUT_DB[body.statut] ?? body.statut;
+      updates.statut = statutDB;
+      // Si on marque comme payée et qu'aucune date_paiement n'est fournie, on l'auto-set
+      if (statutDB === "payee" && body.date_paiement === undefined) {
+        updates.date_paiement = new Date().toISOString().split("T")[0];
+      }
+    }
 
     // Remise + acompte (avec clamp côté serveur)
     const remisePercent = body.remise_percent !== undefined

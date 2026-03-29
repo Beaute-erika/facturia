@@ -411,11 +411,42 @@ export default function FacturesClient() {
     }
   };
 
-  const handleMarkPaid = (id: string) => {
-    setFactures((prev) => prev.map((f) => f.id === id ? { ...f, status: "payée" as FactureStatus } : f));
-    setPreviewTarget(null);
-    setMenuOpen(null);
-    showToast("Facture marquée comme payée ✓");
+  const handleMarkPaid = async (facture: Facture) => {
+    if (!facture._uuid) {
+      console.error("[handleMarkPaid] _uuid manquant pour", facture.id);
+      showToast("Impossible : identifiant facture manquant", "warning");
+      return;
+    }
+
+    const today = new Date().toISOString().split("T")[0];
+    console.log(`[handleMarkPaid] PATCH /api/factures/${facture._uuid}`, { statut: "payée", date_paiement: today });
+
+    try {
+      const resp = await fetch(`/api/factures/${facture._uuid}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ statut: "payée", date_paiement: today }),
+      });
+      const data = await resp.json() as { facture?: Record<string, unknown>; error?: string };
+      console.log("[handleMarkPaid] réponse API:", resp.status, data);
+
+      if (!resp.ok) {
+        console.error("[handleMarkPaid] Erreur API:", data.error);
+        showToast(`Erreur : ${data.error ?? "mise à jour échouée"}`, "warning");
+        return;
+      }
+
+      // Mise à jour locale uniquement après confirmation DB
+      setFactures((prev) =>
+        prev.map((f) => f.id === facture.id ? { ...f, status: "payée" as FactureStatus } : f)
+      );
+      setPreviewTarget(null);
+      setMenuOpen(null);
+      showToast("Facture marquée comme payée ✓");
+    } catch (err) {
+      console.error("[handleMarkPaid] Exception réseau:", err);
+      showToast("Erreur réseau, réessayez", "warning");
+    }
   };
 
   const handleRelance = (f: Facture) => {
@@ -598,7 +629,7 @@ export default function FacturesClient() {
           onClose={handleClosePreview}
           onDownload={() => handleDownload(previewTarget)}
           onSendEmail={() => { handleClosePreview(); setEmailTarget(previewTarget); }}
-          onMarkPaid={() => { handleMarkPaid(previewTarget.id); handleClosePreview(); }}
+          onMarkPaid={() => { handleMarkPaid(previewTarget).then(handleClosePreview); }}
           onEdit={() => setEditingId(previewTarget.id)}
         />
       )}
@@ -763,7 +794,7 @@ export default function FacturesClient() {
                   <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                     {(f.status === "envoyée" || f.status === "en retard") && (
                       <button
-                        onClick={() => handleMarkPaid(f.id)}
+                        onClick={() => handleMarkPaid(f)}
                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-primary bg-primary/10 text-xs font-semibold"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" />
@@ -1075,7 +1106,7 @@ export default function FacturesClient() {
                             {(f.status === "envoyée" || f.status === "en retard") && (
                               <button
                                 title="Marquer payée"
-                                onClick={() => handleMarkPaid(f.id)}
+                                onClick={() => handleMarkPaid(f)}
                                 className="p-1.5 rounded-lg text-text-muted hover:text-primary hover:bg-primary/10 transition-colors"
                               >
                                 <CheckCircle2 className="w-4 h-4" />
