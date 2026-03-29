@@ -4,7 +4,7 @@ import {
   ComposedChart, Bar, Line, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import type { MonthData } from "@/lib/analytics-data";
+import type { MonthData } from "@/lib/analytics-types";
 
 const CustomTooltip = ({ active, payload, label }: {
   active?: boolean;

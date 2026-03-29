@@ -4,7 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
-import type { ClientStat } from "@/lib/analytics-data";
+import type { ClientStat } from "@/lib/analytics-types";
 
 const TYPE_COLOR: Record<string, string> = {
   Public: "#00c97a",

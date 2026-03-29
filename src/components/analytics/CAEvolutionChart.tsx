@@ -4,7 +4,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer,
 } from "recharts";
-import type { MonthData } from "@/lib/analytics-data";
+import type { MonthData } from "@/lib/analytics-types";
 
 interface CAEvolutionChartProps {
   data: MonthData[];
