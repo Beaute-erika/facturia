@@ -212,13 +212,6 @@ export default function AnalyticsClient() {
   return (
     <div className="space-y-6 animate-fade-in">
 
-      {/* ── ANALYTICS V2 TEST ── données réelles Supabase */}
-      <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-primary/10 border border-primary/20 text-xs font-semibold text-primary">
-        <span>ANALYTICS V2 TEST</span>
-        <span className="text-text-muted font-normal">·</span>
-        <span className="font-mono text-text-muted font-normal">Source: /api/analytics</span>
-      </div>
-
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
