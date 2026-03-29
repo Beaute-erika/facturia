@@ -213,7 +213,7 @@ function buildSystemPrompt(contextData: string, contextType: string): string {
 
 Ton rôle : aider à la gestion CRM opérationnelle.
 Tu aides sur : clients, devis, factures, chantiers, relances, administration.
-Tu NE t'occupes PAS de prospection, de leads ni de génération de contacts.
+Tu NE t'occupes PAS de prospection ni de génération de contacts.
 
 Règles absolues :
 - Tu bases tes réponses UNIQUEMENT sur les données fournies en contexte ci-dessous

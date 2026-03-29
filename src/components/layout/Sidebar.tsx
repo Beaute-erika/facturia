@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import {
   LayoutDashboard, Users, HardHat, BarChart3,
   Settings, Zap, Building2, ChevronRight, LogOut, Sparkles, X,
-  Target, Package,
+  Package,
   // Documents group
   Files, Receipt, FileText, FilePlus2, ClipboardList, Truck, FileMinus, Repeat,
   ChevronDown,
@@ -63,7 +63,6 @@ const mainNavItems: NavItem[] = [
   { label: "Chantiers", href: "/chantiers", icon: HardHat   },
   { label: "Services",  href: "/services",  icon: Package   },
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
-  { label: "Leads",     href: "/leads",     icon: Target    },
 ];
 
 const bottomItems: NavItem[] = [
@@ -258,7 +257,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
           )}
         </div>
 
-        {/* Main nav: Chantiers, Services, Analytics, Leads */}
+        {/* Main nav: Chantiers, Services, Analytics */}
         <div className="pt-1">
           {mainNavItems.map(renderNavItem)}
         </div>
