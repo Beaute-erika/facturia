@@ -166,6 +166,64 @@ export async function POST(req: NextRequest) {
         break;
       }
 
+      // ── Invoice payment failed — mark subscription as past_due ────────────
+      case "invoice.payment_failed": {
+        const invoice    = event.data.object as Stripe.Invoice;
+        const customerId = invoice.customer as string;
+
+        const { data: user } = await supabase
+          .from("users")
+          .select("id, subscription_status")
+          .eq("stripe_customer_id", customerId)
+          .single();
+
+        if (!user) {
+          console.error("[billing/webhook] invoice.payment_failed — user introuvable pour customer", customerId);
+          break;
+        }
+
+        // Only update if the subscription was active (avoid redundant writes)
+        if (user.subscription_status !== "past_due") {
+          await supabase
+            .from("users")
+            .update({ subscription_status: "past_due" })
+            .eq("id", user.id);
+        }
+
+        console.warn(`[billing/webhook] invoice.payment_failed — user ${user.id} → past_due (tentative ${(invoice as Stripe.Invoice & { attempt_count?: number }).attempt_count ?? "?"})`);
+        break;
+      }
+
+      // ── Invoice payment succeeded — restore active status if was past_due ─
+      case "invoice.payment_succeeded": {
+        const invoice    = event.data.object as Stripe.Invoice;
+        const customerId = invoice.customer as string;
+
+        // Only act on subscription invoices (not one-time)
+        // Note: `subscription` exists at runtime but typing varies across Stripe API versions
+        const invoiceSubscriptionId = (invoice as Stripe.Invoice & { subscription?: string | null }).subscription;
+        if (!invoiceSubscriptionId) break;
+
+        const { data: user } = await supabase
+          .from("users")
+          .select("id, subscription_status")
+          .eq("stripe_customer_id", customerId)
+          .single();
+
+        if (!user) break;
+
+        // Restore to active if coming from past_due
+        if (user.subscription_status === "past_due") {
+          await supabase
+            .from("users")
+            .update({ subscription_status: "active" })
+            .eq("id", user.id);
+
+          console.log(`[billing/webhook] invoice.payment_succeeded — user ${user.id} → active (récupération paiement)`);
+        }
+        break;
+      }
+
       default:
         // Ignore all other events
         break;
