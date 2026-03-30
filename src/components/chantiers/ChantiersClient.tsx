@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Plus, MapPin, Calendar, Users, LayoutGrid,
   CalendarDays, Clock, CheckCircle2, PauseCircle,
@@ -12,23 +12,25 @@ import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
 import PlanningView from "./PlanningView";
 import ChantierDrawer from "./ChantierDrawer";
-import { CHANTIERS_DATA, type Chantier, type ChantierStatus } from "@/lib/chantiers-data";
+import type { Chantier, ChantierStatus } from "@/lib/chantiers-types";
 
 type ViewMode = "cards" | "planning";
-type Filter = "Tous" | "en cours" | "planifié" | "terminé" | "en pause";
+type Filter = "Tous" | ChantierStatus;
 
 const STATUS_BADGE: Record<ChantierStatus, "success" | "warning" | "info" | "default"> = {
   "en cours": "info",
-  "terminé": "success",
+  "terminé":  "success",
   "planifié": "warning",
-  "en pause": "default",
+  "suspendu": "default",
 };
 
 const PROGRESS_COLOR = (pct: number) =>
   pct === 100 ? "bg-primary" : pct > 75 ? "bg-status-info" : pct > 40 ? "bg-status-info/80" : "bg-status-warning";
 
 export default function ChantiersClient() {
-  const [chantiers, setChantiers] = useState<Chantier[]>(CHANTIERS_DATA);
+  const [chantiers, setChantiers] = useState<Chantier[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<ViewMode>("cards");
   const [filter, setFilter] = useState<Filter>("Tous");
   const [search, setSearch] = useState("");
@@ -40,39 +42,95 @@ export default function ChantiersClient() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const handleUpdate = (updated: Chantier) => {
+  useEffect(() => {
+    fetch("/api/chantiers")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.error) throw new Error(data.error);
+        setChantiers(data.chantiers ?? []);
+      })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : "Erreur chargement"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleUpdate = async (updated: Chantier) => {
+    // Optimistic update
     setChantiers((prev) => prev.map((c) => c.id === updated.id ? updated : c));
     setSelected(updated);
-    showToast("Chantier mis à jour");
+
+    try {
+      const resp = await fetch(`/api/chantiers/${updated.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          statut:      updated.status,
+          progression: updated.progression,
+          etapes:      updated.etapes,
+          notes:       updated.notes,
+        }),
+      });
+      if (!resp.ok) {
+        showToast("Erreur lors de la sauvegarde");
+      } else {
+        showToast("Chantier mis à jour");
+      }
+    } catch {
+      showToast("Erreur réseau");
+    }
   };
 
   const filtered = chantiers.filter((c) => {
     const statusMatch = filter === "Tous" || c.status === filter;
+    const q = search.toLowerCase();
     const searchMatch = !search ||
-      c.client.toLowerCase().includes(search.toLowerCase()) ||
-      c.type.toLowerCase().includes(search.toLowerCase()) ||
-      c.city.toLowerCase().includes(search.toLowerCase());
+      c.client.toLowerCase().includes(q) ||
+      c.titre.toLowerCase().includes(q) ||
+      (c.adresse_chantier ?? "").toLowerCase().includes(q);
     return statusMatch && searchMatch;
   });
 
   // KPIs
-  const enCours = chantiers.filter((c) => c.status === "en cours").length;
+  const enCours   = chantiers.filter((c) => c.status === "en cours").length;
   const planifies = chantiers.filter((c) => c.status === "planifié").length;
-  const termines = chantiers.filter((c) => c.status === "terminé").length;
+  const termines  = chantiers.filter((c) => c.status === "terminé").length;
   const budgetActif = chantiers
     .filter((c) => c.status !== "terminé")
-    .reduce((s, c) => s + c.budget, 0);
-  const avgProgress = chantiers.length
-    ? Math.round(chantiers.filter((c) => c.status === "en cours").reduce((s, c) => s + c.progression, 0) / Math.max(enCours, 1))
+    .reduce((s, c) => s + (c.budget_prevu ?? 0), 0);
+  const avgProgress = enCours > 0
+    ? Math.round(chantiers.filter((c) => c.status === "en cours").reduce((s, c) => s + c.progression, 0) / enCours)
     : 0;
 
   const FILTERS: { id: Filter; label: string; icon: React.ElementType }[] = [
-    { id: "Tous", label: "Tous", icon: HardHat },
-    { id: "en cours", label: "En cours", icon: Clock },
-    { id: "planifié", label: "Planifiés", icon: CalendarDays },
-    { id: "terminé", label: "Terminés", icon: CheckCircle2 },
-    { id: "en pause", label: "En pause", icon: PauseCircle },
+    { id: "Tous",      label: "Tous",      icon: HardHat },
+    { id: "en cours",  label: "En cours",  icon: Clock },
+    { id: "planifié",  label: "Planifiés", icon: CalendarDays },
+    { id: "terminé",   label: "Terminés",  icon: CheckCircle2 },
+    { id: "suspendu",  label: "Suspendus", icon: PauseCircle },
   ];
+
+  if (loading) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div className="h-8 w-48 bg-surface-active rounded-lg animate-pulse" />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => <div key={i} className="h-24 bg-surface-active rounded-2xl animate-pulse" />)}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {[...Array(4)].map((_, i) => <div key={i} className="h-44 bg-surface-active rounded-2xl animate-pulse" />)}
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="py-20 text-center">
+        <HardHat className="w-12 h-12 mx-auto mb-4 text-text-muted opacity-30" />
+        <p className="text-text-muted mb-4">{error}</p>
+        <Button variant="secondary" onClick={() => window.location.reload()}>Réessayer</Button>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -129,9 +187,9 @@ export default function ChantiersClient() {
         {/* KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label: "En cours", value: String(enCours), icon: Clock, color: "text-status-info", bg: "bg-status-info/10" },
-            { label: "Planifiés", value: String(planifies), icon: CalendarDays, color: "text-status-warning", bg: "bg-status-warning/10" },
-            { label: "Terminés", value: String(termines), icon: CheckCircle2, color: "text-primary", bg: "bg-primary/10" },
+            { label: "En cours",    value: String(enCours),   icon: Clock,         color: "text-status-info",    bg: "bg-status-info/10" },
+            { label: "Planifiés",   value: String(planifies), icon: CalendarDays,  color: "text-status-warning", bg: "bg-status-warning/10" },
+            { label: "Terminés",    value: String(termines),  icon: CheckCircle2,  color: "text-primary",        bg: "bg-primary/10" },
             { label: "Budget actif", value: `${budgetActif.toLocaleString("fr-FR")} €`, icon: Euro, color: "text-text-primary", bg: "bg-surface-active" },
           ].map((k, i) => (
             <Card key={i} className="py-4">
@@ -167,7 +225,7 @@ export default function ChantiersClient() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Client, type, ville…"
+              placeholder="Client, titre, adresse…"
               className="input-field pl-8 py-1.5 text-sm w-52"
             />
           </div>
@@ -214,13 +272,17 @@ export default function ChantiersClient() {
             {filtered.length === 0 ? (
               <div className="py-20 text-center">
                 <HardHat className="w-12 h-12 mx-auto mb-4 text-text-muted opacity-30" />
-                <p className="text-text-muted">Aucun chantier trouvé</p>
+                <p className="text-text-muted">
+                  {chantiers.length === 0 ? "Aucun chantier — créez votre premier chantier" : "Aucun chantier trouvé"}
+                </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {filtered.map((c) => {
                   const doneEtapes = c.etapes.filter((e) => e.done).length;
-                  const budgetPct = c.budget > 0 ? Math.round((c.depenses / c.budget) * 100) : 0;
+                  const budget    = c.budget_prevu ?? 0;
+                  const depenses  = c.budget_reel ?? 0;
+                  const budgetPct = budget > 0 ? Math.round((depenses / budget) * 100) : 0;
                   const isSelected = selected?.id === c.id;
 
                   return (
@@ -236,7 +298,6 @@ export default function ChantiersClient() {
                       <div className="flex items-start justify-between mb-4">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 mb-1 flex-wrap">
-                            <span className="font-mono text-xs text-text-muted">{c.id}</span>
                             <Badge variant={STATUS_BADGE[c.status]} size="sm" dot>{c.status}</Badge>
                             {c.etapes.length > 0 && (
                               <span className="text-[10px] text-text-muted bg-surface-active px-1.5 py-0.5 rounded-md">
@@ -245,15 +306,17 @@ export default function ChantiersClient() {
                             )}
                           </div>
                           <h3 className="font-semibold text-text-primary">{c.client}</h3>
-                          <p className="text-sm text-text-muted">{c.type}</p>
+                          <p className="text-sm text-text-muted">{c.titre}</p>
                         </div>
                         <div className="text-right flex-shrink-0 ml-3">
-                          <p className="text-base font-bold font-mono text-text-primary">
-                            {c.budget.toLocaleString("fr-FR")} €
-                          </p>
-                          {c.depenses > 0 && (
+                          {budget > 0 && (
+                            <p className="text-base font-bold font-mono text-text-primary">
+                              {budget.toLocaleString("fr-FR")} €
+                            </p>
+                          )}
+                          {depenses > 0 && (
                             <p className={clsx("text-xs font-mono", budgetPct > 80 ? "text-status-error" : "text-text-muted")}>
-                              {c.depenses.toLocaleString("fr-FR")} € dép.
+                              {depenses.toLocaleString("fr-FR")} € réel
                             </p>
                           )}
                         </div>
@@ -261,30 +324,26 @@ export default function ChantiersClient() {
 
                       {/* Meta */}
                       <div className="space-y-1.5 mb-4 text-sm text-text-muted">
-                        <div className="flex items-center gap-2">
-                          <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
-                          <span className="truncate">{c.address}, {c.city}</span>
-                        </div>
-                        <div className="flex items-center gap-4">
+                        {c.adresse_chantier && (
+                          <div className="flex items-center gap-2">
+                            <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+                            <span className="truncate">{c.adresse_chantier}</span>
+                          </div>
+                        )}
+                        {(c.date_debut || c.date_fin_prevue) && (
                           <div className="flex items-center gap-1.5">
                             <Calendar className="w-3.5 h-3.5 flex-shrink-0" />
                             <span>
-                              {new Date(c.startDate).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
+                              {c.date_debut
+                                ? new Date(c.date_debut).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })
+                                : "—"}
                               {" — "}
-                              {new Date(c.endDate).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
+                              {c.date_fin_prevue
+                                ? new Date(c.date_fin_prevue).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })
+                                : "—"}
                             </span>
                           </div>
-                          <div className="flex items-center gap-1.5">
-                            <Users className="w-3.5 h-3.5 flex-shrink-0" />
-                            <div className="flex gap-0.5">
-                              {c.team.map((member) => (
-                                <span key={member} className="w-5 h-5 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-[9px] font-bold text-primary">
-                                  {member}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
+                        )}
                       </div>
 
                       {/* Progress */}
@@ -303,7 +362,7 @@ export default function ChantiersClient() {
                         </div>
 
                         {/* Budget mini bar */}
-                        {c.depenses > 0 && (
+                        {depenses > 0 && budget > 0 && (
                           <div className="mt-2">
                             <div className="flex justify-between text-[10px] text-text-muted mb-1">
                               <span>Budget consommé</span>
