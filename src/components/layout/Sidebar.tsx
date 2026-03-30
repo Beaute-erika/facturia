@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import {
   LayoutDashboard, Users, HardHat, BarChart3,
   Settings, Zap, Building2, ChevronRight, LogOut, Sparkles, X,
-  Package,
+  Package, Wallet,
   // Documents group
   Files, Receipt, FileText, FilePlus2, ClipboardList, Truck, FileMinus, Repeat,
   ChevronDown,
@@ -62,6 +62,7 @@ const documentsNavItems: NavItem[] = [
 const mainNavItems: NavItem[] = [
   { label: "Chantiers", href: "/chantiers", icon: HardHat   },
   { label: "Services",  href: "/services",  icon: Package   },
+  { label: "Frais",     href: "/expenses",  icon: Wallet    },
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
 ];
 

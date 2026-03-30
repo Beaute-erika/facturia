@@ -223,6 +223,21 @@ export type ServiceRow = {
 
 // ─── Avoirs ──────────────────────────────────────────────────────────────────
 
+// ─── Frais (Expenses) ────────────────────────────────────────────────────────
+
+export type ExpenseRow = {
+  id:           string;
+  user_id:      string;
+  title:        string;
+  amount:       number;
+  category:     string | null;
+  expense_date: string;       // DATE → YYYY-MM-DD
+  status:       string;       // "paid" | "pending" | "reimbursed"
+  notes:        string | null;
+  created_at:   string;
+  updated_at:   string;
+}
+
 export type AvoirStatut = "brouillon" | "emis" | "annule";
 
 export type AvoirRow = {
@@ -904,6 +919,23 @@ export type Database = {
           created_at?:     string;
         };
         Update: Partial<Omit<DocumentSequenceRow, "id" | "created_at">>;
+        Relationships: [];
+      };
+      expenses: {
+        Row: ExpenseRow;
+        Insert: {
+          id?:           string;
+          user_id:       string;
+          title:         string;
+          amount:        number;
+          category?:     string | null;
+          expense_date:  string;
+          status?:       string;
+          notes?:        string | null;
+          created_at?:   string;
+          updated_at?:   string;
+        };
+        Update: Partial<Omit<ExpenseRow, "id" | "user_id" | "created_at">>;
         Relationships: [];
       };
       agent_actions_log: {
