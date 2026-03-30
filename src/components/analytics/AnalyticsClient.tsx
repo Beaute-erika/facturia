@@ -12,6 +12,7 @@ import CAEvolutionChart from "./CAEvolutionChart";
 import DonutChart from "./DonutChart";
 import TopClientsChart from "./TopClientsChart";
 import MonthlyBarsChart from "./MonthlyBarsChart";
+import ProfitSection from "./ProfitSection";
 import type { Period, AnalyticsResponse } from "@/lib/analytics-types";
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -252,6 +253,16 @@ export default function AnalyticsClient() {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* ── Section Bénéfice ────────────────────────────────────────────── */}
+      <ProfitSection />
+
+      {/* Séparateur */}
+      <div className="border-t border-surface-border pt-2">
+        <p className="text-[10px] font-semibold text-text-muted uppercase tracking-widest mb-4">
+          Performance commerciale
+        </p>
       </div>
 
       {/* KPI row */}
