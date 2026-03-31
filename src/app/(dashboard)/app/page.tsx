@@ -1,6 +1,7 @@
 import { Euro, FileText, Users, Clock, AlertCircle, HardHat, Sparkles, ArrowRight, Calendar } from "lucide-react";
 import { redirect } from "next/navigation";
 import KPICard from "@/components/dashboard/KPICard";
+import DashboardProfitCards from "@/components/dashboard/DashboardProfitCards";
 import RevenueChart from "@/components/dashboard/RevenueChart";
 import RecentActivity from "@/components/dashboard/RecentActivity";
 import type { ActivityItem } from "@/components/dashboard/RecentActivity";
@@ -213,6 +214,9 @@ export default async function DashboardPage() {
           </Button>
         </div>
       </div>
+
+      {/* Profit ce mois */}
+      <DashboardProfitCards />
 
       {/* KPI Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
