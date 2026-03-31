@@ -37,11 +37,11 @@ export default function ClientsClient() {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
   const [menuOpen, setMenuOpen] = useState<number | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ msg: string; error?: boolean } | null>(null);
 
-  const showToast = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 3000);
+  const showToast = (msg: string, error = false) => {
+    setToast({ msg, error });
+    setTimeout(() => setToast(null), error ? 5000 : 3000);
   };
 
   // Charge les clients depuis Supabase au montage
@@ -97,11 +97,35 @@ export default function ClientsClient() {
     setSelectedClient(updated);
   };
 
-  const handleDelete = (id: number) => {
-    setClients(clients.filter((c) => c.id !== id));
-    if (selectedClient?.id === id) setSelectedClient(null);
+  const handleDelete = async (client: Client) => {
     setMenuOpen(null);
-    showToast("Client supprimé");
+
+    // Impossible de supprimer sans UUID Supabase (client local non persisté)
+    if (!client._uuid) {
+      setClients((prev) => prev.filter((c) => c.id !== client.id));
+      if (selectedClient?.id === client.id) setSelectedClient(null);
+      showToast("Client supprimé");
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/clients/${client._uuid}`, { method: "DELETE" });
+      const json = await res.json();
+
+      if (!res.ok) {
+        // 409 = données liées → message explicite
+        // autres codes → message générique
+        showToast(json.error ?? "Erreur lors de la suppression", true);
+        return;
+      }
+
+      // Succès réel → on retire du state
+      setClients((prev) => prev.filter((c) => c.id !== client.id));
+      if (selectedClient?.id === client.id) setSelectedClient(null);
+      showToast("Client supprimé");
+    } catch {
+      showToast("Impossible de joindre le serveur", true);
+    }
   };
 
   // Filtered
@@ -141,8 +165,13 @@ export default function ClientsClient() {
     <>
       {/* Toast */}
       {toast && (
-        <div className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl bg-primary/10 border border-primary/30 text-primary shadow-card animate-fade-in">
-          <span className="text-sm font-medium">{toast}</span>
+        <div className={clsx(
+          "fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-card animate-fade-in max-w-sm",
+          toast.error
+            ? "bg-status-error/10 border border-status-error/30 text-status-error"
+            : "bg-primary/10 border border-primary/30 text-primary"
+        )}>
+          <span className="text-sm font-medium">{toast.msg}</span>
         </div>
       )}
 
@@ -392,7 +421,7 @@ export default function ClientsClient() {
                                   Voir la fiche
                                 </button>
                                 <button
-                                  onClick={() => handleDelete(client.id)}
+                                  onClick={() => handleDelete(client)}
                                   className="w-full flex items-center gap-2 px-3 py-2 text-xs text-status-error hover:bg-status-error/10 transition-colors"
                                 >
                                   Supprimer

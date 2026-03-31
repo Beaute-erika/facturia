@@ -28,6 +28,7 @@ export interface ClientNote {
 
 export interface Client {
   id: number;
+  _uuid?: string;   // UUID Supabase — présent sur les clients chargés depuis la DB
   name: string;
   type: ClientType;
   status: ClientStatus;
