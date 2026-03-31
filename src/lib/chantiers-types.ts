@@ -31,5 +31,6 @@ export interface Chantier {
   date_fin_reelle: string | null;
   etapes: ChantierEtape[];
   notes: ChantierNote[];
+  archived?: boolean;
   created_at: string;
 }

@@ -38,6 +38,7 @@ export async function PATCH(
     if (body.budget_reel     !== undefined) updates.budget_reel     = body.budget_reel;
     if (body.date_debut      !== undefined) updates.date_debut      = body.date_debut;
     if (body.date_fin_prevue !== undefined) updates.date_fin_prevue = body.date_fin_prevue;
+    if (body.archived !== undefined) updates.archived_at = body.archived ? new Date().toISOString() : null;
 
     const { data, error } = await supabase
       .from("chantiers")
@@ -76,6 +77,7 @@ export async function PATCH(
       date_fin_reelle:  data.date_fin_reelle ?? null,
       etapes:           (data.etapes as Chantier["etapes"]) ?? [],
       notes:            (data.notes as Chantier["notes"]) ?? [],
+      archived:         !!(data.archived_at as string | null),
       created_at:       data.created_at,
     };
 

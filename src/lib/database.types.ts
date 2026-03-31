@@ -170,6 +170,7 @@ export type ChantierRow = {
   budget_reel: number | null;
   etapes: ChantierEtape[];
   notes: ChantierNote[];
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
 }

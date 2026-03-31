@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import {
   Plus, MapPin, Calendar, Users, LayoutGrid,
   CalendarDays, Clock, CheckCircle2, PauseCircle,
-  Search, HardHat, Euro,
+  Search, HardHat, Euro, Archive, ArchiveRestore,
 } from "lucide-react";
 import { clsx } from "clsx";
 import Card from "@/components/ui/Card";
@@ -16,6 +16,7 @@ import type { Chantier, ChantierStatus } from "@/lib/chantiers-types";
 
 type ViewMode = "cards" | "planning";
 type Filter = "Tous" | ChantierStatus;
+type ArchiveView = "actifs" | "archivés";
 
 const STATUS_BADGE: Record<ChantierStatus, "success" | "warning" | "info" | "default"> = {
   "en cours": "info",
@@ -28,22 +29,26 @@ const PROGRESS_COLOR = (pct: number) =>
   pct === 100 ? "bg-primary" : pct > 75 ? "bg-status-info" : pct > 40 ? "bg-status-info/80" : "bg-status-warning";
 
 export default function ChantiersClient() {
-  const [chantiers, setChantiers] = useState<Chantier[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<ViewMode>("cards");
-  const [filter, setFilter] = useState<Filter>("Tous");
-  const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<Chantier | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [chantiers,    setChantiers]    = useState<Chantier[]>([]);
+  const [loading,      setLoading]      = useState(true);
+  const [error,        setError]        = useState<string | null>(null);
+  const [view,         setView]         = useState<ViewMode>("cards");
+  const [archiveView,  setArchiveView]  = useState<ArchiveView>("actifs");
+  const [filter,       setFilter]       = useState<Filter>("Tous");
+  const [search,       setSearch]       = useState("");
+  const [selected,     setSelected]     = useState<Chantier | null>(null);
+  const [toast,        setToast]        = useState<{ msg: string; error?: boolean } | null>(null);
 
-  const showToast = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 3000);
+  const showToast = (msg: string, isError = false) => {
+    setToast({ msg, error: isError });
+    setTimeout(() => setToast(null), isError ? 5000 : 3000);
   };
 
   useEffect(() => {
-    fetch("/api/chantiers")
+    setLoading(true);
+    setError(null);
+    const url = archiveView === "archivés" ? "/api/chantiers?archived=true" : "/api/chantiers";
+    fetch(url)
       .then((r) => r.json())
       .then((data) => {
         if (data.error) throw new Error(data.error);
@@ -51,7 +56,7 @@ export default function ChantiersClient() {
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : "Erreur chargement"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [archiveView]);
 
   const handleUpdate = async (updated: Chantier) => {
     // Optimistic update
@@ -76,6 +81,25 @@ export default function ChantiersClient() {
       }
     } catch {
       showToast("Erreur réseau");
+    }
+  };
+
+  const handleArchive = async (chantier: Chantier, archive = true) => {
+    try {
+      const res = await fetch(`/api/chantiers/${chantier.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archived: archive }),
+      });
+      if (!res.ok) {
+        showToast("Erreur lors de l'archivage", true);
+        return;
+      }
+      setChantiers((prev) => prev.filter((c) => c.id !== chantier.id));
+      if (selected?.id === chantier.id) setSelected(null);
+      showToast(archive ? "Chantier archivé" : "Chantier restauré");
+    } catch {
+      showToast("Impossible de joindre le serveur", true);
     }
   };
 
@@ -135,9 +159,14 @@ export default function ChantiersClient() {
   return (
     <>
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl bg-primary/10 border border-primary/30 text-primary shadow-card animate-fade-in">
-          <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-          <span className="text-sm font-medium">{toast}</span>
+        <div className={clsx(
+          "fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-card animate-fade-in",
+          toast.error
+            ? "bg-status-error/10 border border-status-error/30 text-status-error"
+            : "bg-primary/10 border border-primary/30 text-primary"
+        )}>
+          {!toast.error && <CheckCircle2 className="w-4 h-4 flex-shrink-0" />}
+          <span className="text-sm font-medium">{toast.msg}</span>
         </div>
       )}
 
@@ -155,32 +184,54 @@ export default function ChantiersClient() {
           <div>
             <h1 className="text-2xl font-bold text-text-primary">Chantiers</h1>
             <p className="text-text-muted mt-1">
-              {enCours} en cours •{" "}
-              <span className="text-primary font-medium">{budgetActif.toLocaleString("fr-FR")} € budget actif</span>
+              {archiveView === "archivés"
+                ? `${chantiers.length} chantier(s) archivé(s)`
+                : <>{enCours} en cours • <span className="text-primary font-medium">{budgetActif.toLocaleString("fr-FR")} € budget actif</span></>
+              }
             </p>
           </div>
           <div className="flex gap-2">
-            {/* View toggle */}
+            {/* Archive view toggle */}
             <div className="flex bg-surface border border-surface-border rounded-xl p-1 gap-1">
-              {([
-                { id: "cards" as ViewMode, icon: LayoutGrid, label: "Cartes" },
-                { id: "planning" as ViewMode, icon: CalendarDays, label: "Planning" },
-              ]).map((v) => (
+              {(["actifs", "archivés"] as ArchiveView[]).map((v) => (
                 <button
-                  key={v.id}
-                  onClick={() => setView(v.id)}
-                  title={v.label}
+                  key={v}
+                  onClick={() => { setArchiveView(v); setFilter("Tous"); setSearch(""); }}
                   className={clsx(
-                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
-                    view === v.id ? "bg-primary text-background shadow-glow" : "text-text-muted hover:text-text-primary"
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all capitalize",
+                    archiveView === v ? "bg-primary text-background shadow-glow" : "text-text-muted hover:text-text-primary"
                   )}
                 >
-                  <v.icon className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">{v.label}</span>
+                  {v === "archivés" && <Archive className="w-3 h-3" />}
+                  {v.charAt(0).toUpperCase() + v.slice(1)}
                 </button>
               ))}
             </div>
-            <Button variant="primary" icon={Plus}>Nouveau chantier</Button>
+            {/* View mode toggle (cards / planning) — actifs seulement */}
+            {archiveView === "actifs" && (
+              <div className="flex bg-surface border border-surface-border rounded-xl p-1 gap-1">
+                {([
+                  { id: "cards" as ViewMode, icon: LayoutGrid, label: "Cartes" },
+                  { id: "planning" as ViewMode, icon: CalendarDays, label: "Planning" },
+                ]).map((v) => (
+                  <button
+                    key={v.id}
+                    onClick={() => setView(v.id)}
+                    title={v.label}
+                    className={clsx(
+                      "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
+                      view === v.id ? "bg-primary text-background shadow-glow" : "text-text-muted hover:text-text-primary"
+                    )}
+                  >
+                    <v.icon className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">{v.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {archiveView === "actifs" && (
+              <Button variant="primary" icon={Plus}>Nouveau chantier</Button>
+            )}
           </div>
         </div>
 
@@ -290,7 +341,7 @@ export default function ChantiersClient() {
                       key={c.id}
                       onClick={() => setSelected(c)}
                       className={clsx(
-                        "glass-card p-5 cursor-pointer transition-all duration-200 hover:border-primary/30",
+                        "glass-card p-5 cursor-pointer transition-all duration-200 hover:border-primary/30 group",
                         isSelected && "border-primary/40 shadow-glow"
                       )}
                     >
@@ -308,7 +359,7 @@ export default function ChantiersClient() {
                           <h3 className="font-semibold text-text-primary">{c.client}</h3>
                           <p className="text-sm text-text-muted">{c.titre}</p>
                         </div>
-                        <div className="text-right flex-shrink-0 ml-3">
+                        <div className="flex flex-col items-end gap-1.5 flex-shrink-0 ml-3">
                           {budget > 0 && (
                             <p className="text-base font-bold font-mono text-text-primary">
                               {budget.toLocaleString("fr-FR")} €
@@ -319,6 +370,22 @@ export default function ChantiersClient() {
                               {depenses.toLocaleString("fr-FR")} € réel
                             </p>
                           )}
+                          {/* Archive / Restore */}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleArchive(c, !c.archived); }}
+                            title={c.archived ? "Restaurer le chantier" : "Archiver le chantier"}
+                            className={clsx(
+                              "flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium transition-colors opacity-0 group-hover:opacity-100",
+                              c.archived
+                                ? "text-status-success hover:bg-status-success/10"
+                                : "text-text-muted hover:text-text-secondary hover:bg-surface-hover"
+                            )}
+                          >
+                            {c.archived
+                              ? <><ArchiveRestore className="w-3 h-3" /> Restaurer</>
+                              : <><Archive className="w-3 h-3" /> Archiver</>
+                            }
+                          </button>
                         </div>
                       </div>
 
