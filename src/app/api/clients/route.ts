@@ -17,6 +17,8 @@ function rowToClient(row: ClientRow): Client {
   };
   return {
     id: parseInt(row.id.substring(0, 8), 16), // stable numeric id from uuid prefix
+    _uuid: row.id,
+    archived: !!row.archived_at,
     name: row.prenom ? `${row.prenom} ${row.nom}` : row.raison_sociale || row.nom,
     type: typeMap[row.type] ?? "Particulier",
     status: statusMap[row.statut] ?? "prospect",
@@ -35,22 +37,32 @@ function rowToClient(row: ClientRow): Client {
       ? [{ id: "n-db", content: row.notes, date: new Date(row.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" }), author: "Moi" }]
       : [],
     tags: [],
-    _uuid: row.id, // keep uuid for updates
-  } as Client & { _uuid: string };
+  };
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const supabase = await createServerClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
 
-    const { data, error } = await supabase
+    const showArchived = req.nextUrl.searchParams.get("archived") === "true";
+
+    let query = supabase
       .from("clients")
       .select("*")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
+    // Par défaut : actifs uniquement (archived_at IS NULL)
+    // ?archived=true : archivés uniquement (archived_at IS NOT NULL)
+    if (showArchived) {
+      query = query.not("archived_at", "is", null);
+    } else {
+      query = query.is("archived_at", null);
+    }
+
+    const { data, error } = await query;
     if (error) throw error;
     return NextResponse.json({ clients: (data ?? []).map(rowToClient) });
   } catch (err) {

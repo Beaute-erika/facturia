@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import {
   Plus, Search, Phone, Mail, MapPin, MoreHorizontal,
-  Users, TrendingUp, Star, UserPlus, ChevronRight,
+  Users, TrendingUp, Star, UserPlus, ChevronRight, Archive, ArchiveRestore,
 } from "lucide-react";
 import { clsx } from "clsx";
 import Card from "@/components/ui/Card";
@@ -30,29 +30,34 @@ const STATUS_BADGE: Record<string, { variant: "success" | "warning" | "info" | "
 };
 
 export default function ClientsClient() {
-  const [clients, setClients] = useState<Client[]>([]);
-  const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState<Filter>("Tous");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("Tous");
+  const [clients,        setClients]        = useState<Client[]>([]);
+  const [view,           setView]           = useState<"actifs" | "archivés">("actifs");
+  const [search,         setSearch]         = useState("");
+  const [typeFilter,     setTypeFilter]     = useState<Filter>("Tous");
+  const [statusFilter,   setStatusFilter]   = useState<StatusFilter>("Tous");
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-  const [showNewModal, setShowNewModal] = useState(false);
-  const [menuOpen, setMenuOpen] = useState<number | null>(null);
-  const [toast, setToast] = useState<{ msg: string; error?: boolean } | null>(null);
+  const [showNewModal,   setShowNewModal]   = useState(false);
+  const [menuOpen,       setMenuOpen]       = useState<number | null>(null);
+  const [toast, setToast] = useState<{
+    msg: string;
+    error?: boolean;
+    archiveClient?: Client;  // proposer d'archiver si blocage delete
+  } | null>(null);
 
-  const showToast = (msg: string, error = false) => {
-    setToast({ msg, error });
-    setTimeout(() => setToast(null), error ? 5000 : 3000);
+  const showToast = (msg: string, opts?: { error?: boolean; archiveClient?: Client }) => {
+    const timeout = opts?.error ? 6000 : 3000;
+    setToast({ msg, ...opts });
+    setTimeout(() => setToast(null), timeout);
   };
 
-  // Charge les clients depuis Supabase au montage
+  // Charge les clients selon la vue active (actifs / archivés)
   useEffect(() => {
-    fetch("/api/clients")
+    const url = view === "archivés" ? "/api/clients?archived=true" : "/api/clients";
+    fetch(url)
       .then((r) => r.json())
-      .then((data) => {
-        if (data.clients?.length) setClients(data.clients);
-      })
-      .catch((err) => { console.error("[ClientsClient] fetch /api/clients:", err); });
-  }, []);
+      .then((data) => { setClients(data.clients ?? []); })
+      .catch((err) => { console.error("[ClientsClient] fetch:", err); });
+  }, [view]);
 
   const handleSaveNew = async (client: Client) => {
     // Appel API pour persister en base
@@ -97,6 +102,28 @@ export default function ClientsClient() {
     setSelectedClient(updated);
   };
 
+  const handleArchive = async (client: Client, archive = true) => {
+    setMenuOpen(null);
+    if (!client._uuid) return;
+    try {
+      const res = await fetch(`/api/clients/${client._uuid}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archived: archive }),
+      });
+      if (!res.ok) {
+        showToast("Erreur lors de l'archivage", { error: true });
+        return;
+      }
+      // Retirer de la liste courante (l'autre vue rechargera ses propres données)
+      setClients((prev) => prev.filter((c) => c.id !== client.id));
+      if (selectedClient?.id === client.id) setSelectedClient(null);
+      showToast(archive ? "Client archivé" : "Client restauré");
+    } catch {
+      showToast("Impossible de joindre le serveur", { error: true });
+    }
+  };
+
   const handleDelete = async (client: Client) => {
     setMenuOpen(null);
 
@@ -113,18 +140,23 @@ export default function ClientsClient() {
       const json = await res.json();
 
       if (!res.ok) {
-        // 409 = données liées → message explicite
-        // autres codes → message générique
-        showToast(json.error ?? "Erreur lors de la suppression", true);
+        if (res.status === 409) {
+          // Proposer l'archivage comme alternative dans le toast
+          showToast(json.error ?? "Suppression impossible", {
+            error: true,
+            archiveClient: client,
+          });
+        } else {
+          showToast(json.error ?? "Erreur lors de la suppression", { error: true });
+        }
         return;
       }
 
-      // Succès réel → on retire du state
       setClients((prev) => prev.filter((c) => c.id !== client.id));
       if (selectedClient?.id === client.id) setSelectedClient(null);
       showToast("Client supprimé");
     } catch {
-      showToast("Impossible de joindre le serveur", true);
+      showToast("Impossible de joindre le serveur", { error: true });
     }
   };
 
@@ -166,12 +198,22 @@ export default function ClientsClient() {
       {/* Toast */}
       {toast && (
         <div className={clsx(
-          "fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-card animate-fade-in max-w-sm",
+          "fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 flex flex-col gap-2 px-4 py-3 rounded-xl shadow-card animate-fade-in max-w-sm",
           toast.error
             ? "bg-status-error/10 border border-status-error/30 text-status-error"
             : "bg-primary/10 border border-primary/30 text-primary"
         )}>
           <span className="text-sm font-medium">{toast.msg}</span>
+          {/* Bouton "Archiver plutôt" quand delete est bloqué */}
+          {toast.archiveClient && (
+            <button
+              onClick={() => { setToast(null); handleArchive(toast.archiveClient!); }}
+              className="flex items-center gap-1.5 text-xs font-semibold underline underline-offset-2 self-start"
+            >
+              <Archive className="w-3.5 h-3.5" />
+              Archiver ce client plutôt
+            </button>
+          )}
         </div>
       )}
 
@@ -193,15 +235,39 @@ export default function ClientsClient() {
           <div>
             <h1 className="text-2xl font-bold text-text-primary">Clients</h1>
             <p className="text-text-muted mt-1">
-              {clients.length} clients •{" "}
-              <span className="text-primary font-medium">
-                {totalCA.toLocaleString("fr-FR")} € CA cumulé
-              </span>
+              {clients.length} {view === "archivés" ? "client(s) archivé(s)" : "clients"}{view === "actifs" && ` • `}
+              {view === "actifs" && (
+                <span className="text-primary font-medium">
+                  {totalCA.toLocaleString("fr-FR")} € CA cumulé
+                </span>
+              )}
             </p>
           </div>
-          <Button variant="primary" icon={Plus} onClick={() => setShowNewModal(true)} className="hidden md:flex">
-            Nouveau client
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* Toggle Actifs / Archivés */}
+            <div className="flex bg-surface border border-surface-border rounded-xl p-1 gap-1">
+              {(["actifs", "archivés"] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => { setView(v); setSearch(""); setTypeFilter("Tous"); setStatusFilter("Tous"); }}
+                  className={clsx(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all capitalize",
+                    view === v
+                      ? "bg-primary text-background shadow-sm"
+                      : "text-text-muted hover:text-text-primary"
+                  )}
+                >
+                  {v === "archivés" && <Archive className="w-3 h-3" />}
+                  {v.charAt(0).toUpperCase() + v.slice(1)}
+                </button>
+              ))}
+            </div>
+            {view === "actifs" && (
+              <Button variant="primary" icon={Plus} onClick={() => setShowNewModal(true)} className="hidden md:flex">
+                Nouveau client
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* KPIs */}
@@ -413,19 +479,40 @@ export default function ClientsClient() {
                               <MoreHorizontal className="w-4 h-4" />
                             </button>
                             {menuOpen === client.id && (
-                              <div className="absolute right-0 top-8 z-10 w-36 bg-surface border border-surface-border rounded-xl shadow-card py-1 animate-fade-in">
-                                <button
-                                  onClick={() => { setSelectedClient(client); setMenuOpen(null); }}
-                                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-text-secondary hover:bg-surface-hover transition-colors"
-                                >
-                                  Voir la fiche
-                                </button>
-                                <button
-                                  onClick={() => handleDelete(client)}
-                                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-status-error hover:bg-status-error/10 transition-colors"
-                                >
-                                  Supprimer
-                                </button>
+                              <div className="absolute right-0 top-8 z-10 w-44 bg-surface border border-surface-border rounded-xl shadow-card py-1 animate-fade-in">
+                                {!client.archived && (
+                                  <button
+                                    onClick={() => { setSelectedClient(client); setMenuOpen(null); }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-text-secondary hover:bg-surface-hover transition-colors"
+                                  >
+                                    Voir la fiche
+                                  </button>
+                                )}
+                                {client.archived ? (
+                                  <button
+                                    onClick={() => handleArchive(client, false)}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-status-success hover:bg-status-success/10 transition-colors"
+                                  >
+                                    <ArchiveRestore className="w-3.5 h-3.5" />
+                                    Restaurer
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => handleArchive(client, true)}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-text-secondary hover:bg-surface-hover transition-colors"
+                                  >
+                                    <Archive className="w-3.5 h-3.5" />
+                                    Archiver
+                                  </button>
+                                )}
+                                {!client.archived && (
+                                  <button
+                                    onClick={() => handleDelete(client)}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-status-error hover:bg-status-error/10 transition-colors"
+                                  >
+                                    Supprimer
+                                  </button>
+                                )}
                               </div>
                             )}
                           </div>

@@ -28,7 +28,8 @@ export interface ClientNote {
 
 export interface Client {
   id: number;
-  _uuid?: string;   // UUID Supabase — présent sur les clients chargés depuis la DB
+  _uuid?: string;      // UUID Supabase — présent sur les clients chargés depuis la DB
+  archived?: boolean;  // true si archived_at est non-null en base
   name: string;
   type: ClientType;
   status: ClientStatus;

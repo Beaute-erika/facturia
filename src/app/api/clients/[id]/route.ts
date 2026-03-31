@@ -1,6 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase-server";
 
+/** PATCH /api/clients/[id] — archivage / désarchivage */
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: { id: string } },
+) {
+  try {
+    const supabase = await createServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+
+    const { id } = params;
+    const body = await req.json() as { archived?: boolean };
+
+    const { error } = await supabase
+      .from("clients")
+      .update({
+        archived_at: body.archived ? new Date().toISOString() : null,
+        updated_at:  new Date().toISOString(),
+      })
+      .eq("id", id)
+      .eq("user_id", user.id);
+
+    if (error) throw error;
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("[clients/[id]/PATCH]", err);
+    return NextResponse.json({ error: "Erreur serveur" }, { status: 500 });
+  }
+}
+
 /** DELETE /api/clients/[id] — suppression sécurisée d'un client */
 export async function DELETE(
   _req: NextRequest,

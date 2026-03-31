@@ -64,6 +64,7 @@ export type ClientRow = {
   siret: string | null;
   notes: string | null;
   ca_total: number;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
 }
